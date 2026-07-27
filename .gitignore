@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual env (local only; Colab deps live in requirements-train.txt)
+.venv/
+
+# Secrets / config
+.env
+
+# Raw postings are NEVER committed (ADR-0002): capture prose at collection time,
+# freeze the processed dataset on HF Hub. Only prose-derived fields leave the machine.
+data/raw/
+*.db
+
+# Model weights / quantized bases (downloaded on demand for the probe)
+models/
+*.gguf
+*.safetensors
+*.bin
+
+# HF / MLflow local artifacts
+mlruns/
+.cache/
+
+# CodeGraph index (user's decision to index)
+.codegraph/
+
+# OS
+.DS_Store
+Thumbs.db
