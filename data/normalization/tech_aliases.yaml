@@ -1,0 +1,60 @@
+# Technology alias dictionary: canonical -> [aliases].
+#
+# VENDORED from P0w3r223/it-job-radar @ 2e051cdb (data/normalization/tech_aliases.yaml).
+# ADR-0002 chose vendoring over a git dependency for S1 (self-contained, unblocked).
+# If the upstream dictionary changes, re-sync this copy and bump the pinned commit.
+#
+# Seeded from GitHub Linguist (languages) + Stack Overflow tag synonyms (frameworks).
+# Matching is case-insensitive; values here are compared in lowercase. Extend freely.
+
+# Languages
+javascript: [js, ecmascript, java script]
+typescript: [ts]
+python: [py, python3]
+java: [java se, core java]
+"c#": [csharp, "c sharp", ".net c#"]
+"c++": [cpp, cplusplus]
+php: []
+go: [golang]
+rust: []
+kotlin: []
+swift: []
+ruby: []
+scala: []
+sql: []
+
+# Frontend
+react: [reactjs, "react.js", react js]
+angular: [angularjs, angular2, "angular.js"]
+vue: [vuejs, "vue.js", vue js]
+nextjs: ["next.js", next]
+svelte: [sveltekit]
+"html": [html5]
+"css": [css3]
+tailwind: [tailwindcss, "tailwind css"]
+
+# Backend / frameworks
+node: [nodejs, "node.js", node js]
+spring: [spring boot, springboot, spring framework]
+"django": []
+flask: []
+fastapi: [fast api]
+dotnet: [".net", "asp.net", "asp.net core", "net core"]
+"express": [expressjs, "express.js"]
+laravel: []
+symfony: []
+
+# Data / DevOps / cloud
+docker: []
+kubernetes: [k8s]
+aws: ["amazon web services"]
+azure: ["microsoft azure"]
+gcp: ["google cloud", "google cloud platform"]
+postgresql: [postgres, psql]
+mysql: []
+mongodb: [mongo]
+redis: []
+kafka: [apache kafka]
+terraform: []
+git: []
+linux: []

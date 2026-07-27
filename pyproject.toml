@@ -21,6 +21,8 @@ dependencies = [
     "requests>=2.31,<3",
     "huggingface-hub>=0.24,<1",
     "mlflow>=2.16,<3",
+    # Fuzzy technology-alias matching — vendored with it-job-radar's normalize.py (ADR-0002).
+    "rapidfuzz>=3.9,<4",
 ]
 
 [project.optional-dependencies]
