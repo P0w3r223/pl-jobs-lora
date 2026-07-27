@@ -1,0 +1,18 @@
+# COLAB-ONLY training dependencies — DO NOT `pip install` these locally.
+#
+# These require a Linux GPU (bitsandbytes has no usable Windows/CPU build), so the QLoRA
+# training runs on Colab/Kaggle while the whole repo (dataset builder, eval harness, probe)
+# is driven from the local .venv. The Colab notebook does:
+#   pip install -r requirements-train.txt
+#   python -m pl_jobs_lora.train.qlora ...   # writes the adapter, pushes it to HF Hub
+#
+# See docs/decisions/0004-training-infra.md.
+
+transformers>=4.44,<5
+peft>=0.12,<1
+bitsandbytes>=0.43,<1
+accelerate>=0.33,<1
+datasets>=2.20,<4
+trl>=0.9,<1
+# Push adapters / pull the frozen dataset from HF Hub (also a local dep for eval).
+huggingface-hub>=0.24,<1
