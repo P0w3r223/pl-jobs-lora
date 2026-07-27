@@ -55,6 +55,24 @@ pytest        # offline: no models, no network
 ruff check .
 ```
 
+### Base-model probe (ADR-0001)
+
+Selects the QLoRA base by running both candidates (Qwen2.5-1.5B, Bielik-1.5B) zero- and few-shot
+over a live dev slice on **local CPU via GGUF**, scored by the pure harness:
+
+```bash
+# CPU llama.cpp: on Windows use the prebuilt wheel (no compiler needed)
+.venv/Scripts/python -m pip install llama-cpp-python --prefer-binary \
+  --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+.venv/Scripts/python -m pl_jobs_lora.probe --collect   # fetch slice, then probe both models
+.venv/Scripts/python -m pl_jobs_lora.probe             # replay cached slice
+```
+
+GGUFs download on demand; the slice, models, and per-run predictions/reports stay local (gitignored).
+Both candidates use matched **Q8_0** quantization (Bielik ships no q4). Results land in
+`results/probe/`; the decision and numbers are recorded in ADR-0001.
+
 ## Evaluation (shape — populated in later sessions)
 
 | Variant | JSON valid | Seniority F1 | Tech F1 | Work-mode F1 | Salary acc | Median cost | Median latency |

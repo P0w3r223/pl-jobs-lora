@@ -29,6 +29,21 @@ class ProbeConfig:
     temperature: float
     max_tokens: int
     few_shot_examples: int
+    context_tokens: int
+    shot_modes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CollectionConfig:
+    sitemap_url: str
+    user_agent: str
+    request_delay_s: float
+    request_timeout_s: int
+
+
+@dataclass(frozen=True)
+class ScoringConfig:
+    salary_rel_tolerance: float
 
 
 @dataclass(frozen=True)
@@ -55,6 +70,8 @@ class Config:
     data: DataConfig
     hf: HfConfig
     tracking: TrackingConfig
+    collection: CollectionConfig
+    scoring: ScoringConfig
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -70,10 +87,14 @@ def load_config(path: Path | None = None) -> Config:
     )
     if len(candidates) < 2:
         raise ValueError("The base-model probe needs at least two candidates (ADR-0001).")
+    probe_raw = dict(raw["probe"])
+    probe_raw["shot_modes"] = tuple(probe_raw["shot_modes"])
     return Config(
         models=candidates,
-        probe=ProbeConfig(**raw["probe"]),
+        probe=ProbeConfig(**probe_raw),
         data=DataConfig(**raw["data"]),
         hf=HfConfig(**raw["hf"]),
         tracking=TrackingConfig(**raw["tracking"]),
+        collection=CollectionConfig(**raw["collection"]),
+        scoring=ScoringConfig(**raw["scoring"]),
     )

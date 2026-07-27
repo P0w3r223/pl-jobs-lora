@@ -4,21 +4,39 @@ models:
   # The two base-model candidates for the empirical probe (ADR-0001). The exact GGUF
   # source (repo + file) is resolved and recorded during the S1 probe (step 7); until
   # then it is null so a wrong guess is never silently baked in.
+  # Matched Q8_0 quantization for both (fairness): Bielik ships no q4 GGUF, only fp16/Q8_0,
+  # so the planned q4 (ADR-0001) is raised to Q8_0 for both candidates — resolved 2026-07-27.
   candidates:
     - key: qwen2.5-1.5b
       hf_repo: Qwen/Qwen2.5-1.5B-Instruct
-      gguf_repo: null
-      gguf_file: null
+      gguf_repo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+      gguf_file: qwen2.5-1.5b-instruct-q8_0.gguf
     - key: bielik-1.5b
       hf_repo: speakleash/Bielik-1.5B-v3.0-Instruct
-      gguf_repo: null
-      gguf_file: null
+      gguf_repo: speakleash/Bielik-1.5B-v3.0-Instruct-GGUF
+      gguf_file: Bielik-1.5B-v3.0-Instruct.Q8_0.gguf
 
 probe:
   dev_slice_size: 25       # a probe, not the dataset
   temperature: 0.0         # greedy — the only variable is the base model
   max_tokens: 1024
   few_shot_examples: 2
+  context_tokens: 8192     # llama.cpp n_ctx
+  shot_modes: [zero, few]
+
+# theprotocol collection etiquette (mirrors it-job-radar; ADR-0002 leakage guard applied in code).
+collection:
+  sitemap_url: https://static.theprotocol.it/sitemaps/CurrentOffers/SiteMapJobOffers1.xml
+  # Realistic browser UA — the site serves a stripped page to non-browser agents.
+  user_agent: >-
+    Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+    (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+  request_delay_s: 1.0     # throttle between offer fetches
+  request_timeout_s: 25
+
+# Pure scorer knobs (ADR-0003). Salary bounds scored within a tolerance band.
+scoring:
+  salary_rel_tolerance: 0.05   # ±5% on amount_from/amount_to
 
 data:
   sitemap_offers_sample: 800                  # target dataset size (S2); 314 in the old DB
