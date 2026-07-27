@@ -10,10 +10,11 @@ labeled with a triangulated QA loop, and every model variant is scored by one sh
 argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
 task at a fraction of the cost — and here is the measurement.*
 
-> Status: **in progress (session 1 of ~5) — scaffold complete.** The extraction contract, the
-> vendored normalization (for fair scoring), the config/tracking layer, and the design decisions are
-> built and tested. The dataset, the evaluation harness, and the trained adapter land in the next
-> sessions. Numbers below are shown as an **empty shape**, not invented values.
+> Status: **in progress (session 1 of ~5) — scaffold + base-model probe done.** The extraction
+> contract, vendored normalization, config/tracking layer, and design decisions are built and tested;
+> the base model is now **chosen from data** — **Bielik-1.5B, few-shot** (see below). The full
+> dataset, API baselines, and the trained adapter land in the next sessions. Evaluation numbers below
+> are shown as an **empty shape**, not invented values.
 
 ## Why it's built this way
 
@@ -26,8 +27,10 @@ task at a fraction of the cost — and here is the measurement.*
   test set**, per field. See [ADR-0003](docs/decisions/0003-evaluation-methodology.md).
 - **Cost thinking, not just accuracy.** The report answers "per 1000 postings: API $X vs a
   fine-tuned model at ~$0 — at what accuracy?" — the question an employer actually asks.
-- **A defensible base-model choice.** Bielik-1.5B vs Qwen2.5-1.5B is decided by an empirical probe,
-  not reputation. See [ADR-0001](docs/decisions/0001-base-model-selection.md).
+- **A defensible base-model choice.** Bielik-1.5B vs Qwen2.5-1.5B was decided by an empirical probe,
+  not reputation: on a 23-offer dev slice **Bielik-1.5B few-shot** won on JSON-validity × field
+  accuracy (0.91 valid, 0.32 field F1) — and zero-shot Bielik emitting *no* valid JSON is exactly
+  the gap QLoRA closes. See [ADR-0001](docs/decisions/0001-base-model-selection.md).
 
 ## Architecture
 
