@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- Synthetic theprotocol offer page for offline collector tests. Not real data.
+     Exercises: titled jsonSections (prose), a "Technologies we use" section + a leaky
+     textSection that must BOTH be excluded from the input (leakage guard), platform-gold
+     widgets (attributes/technologies), publicationDetails, and a B2B hourly salary. -->
+<html><head><title>fixture</title></head><body>
+<script id="__NEXT_DATA__" type="application/json">
+{
+  "props": {
+    "pageProps": {
+      "offer": {
+        "id": "fixture-001",
+        "attributes": {
+          "title": {"value": "Senior Python Developer"},
+          "employer": {"name": "Acme Sp. z o.o."},
+          "workplaces": [{"city": "Wrocław", "region": "dolnośląskie"}],
+          "employment": {
+            "positionLevelIds": ["senior", "regular"],
+            "detailedWorkModes": [{"code": "home-office"}, {"code": "hybrid"}],
+            "typesOfContracts": [
+              {"name": "B2B", "salary": {
+                "from": 100, "to": 140, "currencyCode": "PLN", "kindCode": "netto (+ VAT)",
+                "timeUnit": {"longForm": "godzinowo"}
+              }}
+            ]
+          }
+        },
+        "technologies": {
+          "expected": [{"name": "Python"}, {"name": "PostgreSQL"}],
+          "optional": [{"name": "ReactJS"}]
+        },
+        "publicationDetails": {"dateOfInitialPublicationUtc": "2026-07-13T11:32:56Z"},
+        "textSections": [
+          {"title": null, "plainText": "Expected, Python, PostgreSQL", "elements": []},
+          {"title": null, "plainText": "About the project, redundant flattened mirror.", "elements": []}
+        ],
+        "jsonSections": [
+          {"title": "Technologies we use", "model": {"paragraphs": [], "bullets": ["Python", "PostgreSQL"]}},
+          {"title": "O projekcie", "model": {
+            "paragraphs": ["Budujemy platformę analityczną w chmurze."], "bullets": []
+          }},
+          {"title": "Twój zakres obowiązków", "model": {
+            "paragraphs": [], "bullets": [
+              "Projektowanie usług backendowych.", "Utrzymanie pipeline'ów danych."
+            ]
+          }},
+          {"title": "Nasze wymagania", "model": {
+            "paragraphs": ["Szukamy doświadczonej osoby."],
+            "bullets": ["3+ lata doświadczenia", "znajomość baz danych"]
+          }}
+        ]
+      }
+    }
+  }
+}
+</script>
+</body></html>

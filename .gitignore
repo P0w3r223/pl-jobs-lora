@@ -19,9 +19,15 @@ data/raw/
 
 # Model weights / quantized bases (downloaded on demand for the probe)
 models/
+data/models/
 *.gguf
 *.safetensors
 *.bin
+
+# Probe slice (prose-derived, replayed) and per-run predictions/reports — not committed;
+# only the ADR numbers + a small offline fixture are versioned.
+data/probe_slice.json
+results/probe/
 
 # HF / MLflow local artifacts
 mlruns/
