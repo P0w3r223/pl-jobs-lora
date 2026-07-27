@@ -1,8 +1,8 @@
 """Base-model selection probe (ADR-0001): run both candidates zero/few-shot over a dev slice,
 score per-field, record numbers, pick the winner.
 
-Inference runs on local CPU via GGUF q4 (user decision) — llama-cpp-python is imported lazily so
-the pure parts (report aggregation, winner pick) stay importable and testable without it. Each
+Inference runs on local CPU via GGUF (matched Q8_0, ADR-0001) — llama-cpp-python is imported
+lazily so the pure parts (report aggregation, winner pick) stay importable and testable. Each
 variant emits ``results/probe/predictions/{candidate}__{mode}.jsonl``; scoring is the pure ADR-0003
 scorer. The probe measures the base model's steerability toward our JSON schema — the better
 *starting point* for QLoRA, not a final quality claim.
