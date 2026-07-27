@@ -1,0 +1,34 @@
+# All knobs live here — no hardcoded values in code (loaded into frozen dataclasses).
+
+models:
+  # The two base-model candidates for the empirical probe (ADR-0001). The exact GGUF
+  # source (repo + file) is resolved and recorded during the S1 probe (step 7); until
+  # then it is null so a wrong guess is never silently baked in.
+  candidates:
+    - key: qwen2.5-1.5b
+      hf_repo: Qwen/Qwen2.5-1.5B-Instruct
+      gguf_repo: null
+      gguf_file: null
+    - key: bielik-1.5b
+      hf_repo: speakleash/Bielik-1.5B-v3.0-Instruct
+      gguf_repo: null
+      gguf_file: null
+
+probe:
+  dev_slice_size: 25       # a probe, not the dataset
+  temperature: 0.0         # greedy — the only variable is the base model
+  max_tokens: 1024
+  few_shot_examples: 2
+
+data:
+  sitemap_offers_sample: 800                  # target dataset size (S2); 314 in the old DB
+  hf_dataset_repo: P0w3r223/pl-jobs-lora-dataset   # placeholder — confirmed in S2
+
+hf:
+  adapter_repo: P0w3r223/pl-jobs-lora-adapter      # placeholder — confirmed in S5
+
+tracking:
+  experiment: pl-jobs-lora
+  # Local file store by default; a hosted MLflow (DagsHub) is supplied at runtime via the
+  # MLFLOW_TRACKING_URI env var so switching backends is config, not code (ADR-0004).
+  tracking_uri: null
