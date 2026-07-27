@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pl-jobs-lora"
+version = "0.1.0"
+description = "QLoRA fine-tune of a small Polish LLM that structures Polish IT job-posting prose into JSON, compared honestly against zero-/few-shot API baselines on accuracy x cost x latency."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+keywords = ["qlora", "peft", "fine-tuning", "polish-nlp", "structured-extraction"]
+# LOCAL half of the dependency split (ADR-0004): everything needed to build the dataset,
+# score predictions, and run the base-model probe on CPU. The GPU/Linux training stack
+# (transformers/peft/bitsandbytes) lives in requirements-train.txt and is installed ONLY
+# on Colab — it must never be a local dependency.
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pyyaml>=6,<7",
+    "pandas>=2.2,<3",
+    "requests>=2.31,<3",
+    "huggingface-hub>=0.24,<1",
+    "mlflow>=2.16,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.6,<1",
+]
+# Optional local CPU inference for the base-model probe (ADR-0001) and later GGUF eval.
+# A prebuilt wheel is used where available; not required for the pure scorer or its tests.
+gguf = [
+    "llama-cpp-python>=0.3,<0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # MLflow ships Pydantic models written against an older API — third-party, cosmetic.
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince212",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
