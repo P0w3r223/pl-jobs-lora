@@ -6,6 +6,8 @@ from pl_jobs_lora.dataset.agreement import (
     BUCKETS,
     AgreementReport,
     cohen_kappa,
+    disagreeing_ids,
+    field_disagreements,
     pairwise,
     triangulate,
 )
@@ -77,6 +79,22 @@ def test_triangulate_only_over_human_ids():
     human = [_rec("a", seniority=["mid"])]  # only "a" was human-checked
     t = triangulate(llm, platform, human, salary_rel_tolerance=_TOL)
     assert t.n == 1  # "b" is excluded — no human reference
+
+
+def test_field_disagreements_flags_only_differing_fields():
+    a = _rec("1", seniority=["mid"], work_mode=["remote"], title="Dev")
+    b = _rec("1", seniority=["senior"], work_mode=["remote"], title="Dev")
+    flags = field_disagreements(a, b, salary_rel_tolerance=_TOL)
+    assert flags["seniority"] is True
+    assert flags["work_mode"] is False
+    assert flags["title"] is False
+
+
+def test_disagreeing_ids_matched_only():
+    a = [_rec("1", seniority=["mid"]), _rec("2", seniority=["mid"]), _rec("3", seniority=["mid"])]
+    b = [_rec("1", seniority=["mid"]), _rec("2", seniority=["senior"])]  # id 3 absent from b
+    ids = disagreeing_ids(a, b, salary_rel_tolerance=_TOL)
+    assert ids == ["2"]  # id 1 agrees, id 3 has no gold to compare
 
 
 def test_report_shapes_and_render():
