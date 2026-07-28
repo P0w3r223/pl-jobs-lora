@@ -73,6 +73,26 @@ class LabelingQaConfig:
 
 
 @dataclass(frozen=True)
+class TrainConfig:
+    base: str
+    lora_r: int
+    lora_alpha: int
+    lora_dropout: float
+    target_modules: str
+    bnb_4bit_quant_type: str
+    bnb_4bit_use_double_quant: bool
+    epochs: int
+    learning_rate: float
+    lr_scheduler: str
+    warmup_ratio: float
+    per_device_batch_size: int
+    grad_accum_steps: int
+    max_seq_len: int
+    dev_fraction: float
+    seed: int
+
+
+@dataclass(frozen=True)
 class DataConfig:
     sitemap_offers_sample: int
     test_fraction: float
@@ -101,6 +121,7 @@ class Config:
     collection: CollectionConfig
     scoring: ScoringConfig
     eval: EvalConfig
+    train: TrainConfig
     labeling_qa: LabelingQaConfig
 
 
@@ -124,6 +145,8 @@ def load_config(path: Path | None = None) -> Config:
     eval_raw["latency_percentiles"] = tuple(eval_raw["latency_percentiles"])
     eval_cfg = EvalConfig(**eval_raw)
     _validate_eval(eval_cfg)
+    train_cfg = TrainConfig(**raw["train"])
+    _validate_train(train_cfg, candidates)
     labeling_qa = LabelingQaConfig(**raw["labeling_qa"])
     _validate_labeling_qa(labeling_qa, candidates)
     return Config(
@@ -135,8 +158,29 @@ def load_config(path: Path | None = None) -> Config:
         collection=CollectionConfig(**raw["collection"]),
         scoring=ScoringConfig(**raw["scoring"]),
         eval=eval_cfg,
+        train=train_cfg,
         labeling_qa=labeling_qa,
     )
+
+
+def _validate_train(cfg: TrainConfig, candidates: tuple[ModelCandidate, ...]) -> None:
+    """Fail fast on QLoRA knobs (ADR-0006) so a bad config never reaches the Colab trainer."""
+    if cfg.base not in {c.key for c in candidates}:
+        raise ValueError(f"train.base={cfg.base!r} is not a known models.candidates key.")
+    if cfg.lora_r <= 0 or cfg.lora_alpha <= 0:
+        raise ValueError("train.lora_r and train.lora_alpha must be positive.")
+    if not 0.0 <= cfg.lora_dropout < 1.0:
+        raise ValueError("train.lora_dropout must be within [0, 1).")
+    if cfg.epochs <= 0:
+        raise ValueError("train.epochs must be positive.")
+    if cfg.learning_rate <= 0:
+        raise ValueError("train.learning_rate must be positive.")
+    if cfg.per_device_batch_size <= 0 or cfg.grad_accum_steps <= 0:
+        raise ValueError("train.per_device_batch_size and train.grad_accum_steps must be positive.")
+    if cfg.max_seq_len <= 0:
+        raise ValueError("train.max_seq_len must be positive.")
+    if not 0.0 < cfg.dev_fraction < 1.0:
+        raise ValueError("train.dev_fraction must be within (0, 1).")
 
 
 def _validate_eval(cfg: EvalConfig) -> None:
