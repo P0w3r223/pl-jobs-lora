@@ -37,3 +37,15 @@ artifacts go to **HF Hub** regardless.
   hosted endpoint is an env change.
 - Open for S5: the actual hosted tracking URI + auth, and the HF adapter repo ID + token (config
   placeholders today).
+
+## Implementation (S5)
+
+The Colab-only trainer (`train/qlora.py`) and inference (`inference/predict_hf.py`) import the GPU
+stack lazily inside their functions, so the modules stay importable and their pure parts (SFT
+formatting, temporal dev split, completion masking, prediction assembly) are tested on the local
+CPU `.venv` — `bitsandbytes` is never a local dependency (verified). `tracking.start_run` logs the
+LoRA/quant config, per-epoch loss, and the final report; `MLFLOW_TRACKING_URI` still wins over the
+config. The frozen dataset is pulled from HF into the gitignored `data/processed/` by
+`dataset.hf_dataset.pull_dataset` (mirror of `push_dataset`), since a fresh Colab clone has no data.
+The adapter is pushed to `hf.adapter_repo` (`P0w3r223/pl-jobs-lora-adapter`, created private on push,
+like the dataset). The hosted MLflow URI + token remain runtime-supplied (env), still deferred.

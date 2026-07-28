@@ -56,6 +56,8 @@ filterwarnings = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Colab notebooks use mid-cell imports, magics, and long one-liners by design — lint the package, not them.
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

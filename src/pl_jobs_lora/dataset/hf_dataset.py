@@ -66,3 +66,23 @@ def push_dataset(cfg: Config, data_dir: Path, token: str | None = None) -> str:
     api.create_repo(repo_id, repo_type="dataset", private=True, exist_ok=True)
     api.upload_folder(folder_path=str(data_dir), repo_id=repo_id, repo_type="dataset")
     return repo_id
+
+
+def pull_dataset(cfg: Config, data_dir: Path, token: str | None = None) -> Path:
+    """Download the frozen train/test JSONL + manifest from the HF Hub into ``data_dir``.
+
+    The mirror of ``push_dataset``: Colab (and any fresh clone) fetches the immutable dataset
+    instead of re-scraping, since ``data/processed/`` is gitignored. The dataset repo is private,
+    so a read token is needed (arg, ``HF_TOKEN`` env, or a cached ``huggingface-cli login``)."""
+    import os
+
+    from huggingface_hub import hf_hub_download
+
+    token = token or os.environ.get("HF_TOKEN")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("train.jsonl", "test.jsonl", "manifest.json"):
+        hf_hub_download(
+            cfg.data.hf_dataset_repo, name, repo_type="dataset",
+            local_dir=str(data_dir), token=token,
+        )
+    return data_dir

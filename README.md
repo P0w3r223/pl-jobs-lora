@@ -10,12 +10,13 @@ labeled with a triangulated QA loop, and every model variant is scored by one sh
 argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
 task at a fraction of the cost — and here is the measurement.*
 
-> Status: **in progress (session 4 of ~5) — dataset + eval harness built.** The extraction contract,
-> vendored normalization, config/tracking layer, and design decisions are built and tested; the base
-> model is **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON dataset is
-> collected, leakage-guarded, and split by publication date**; the **labeling-QA triangulation** and
-> the **S4 evaluation harness** (zero-/few-shot API baselines + the pure comparison report) are built
-> and tested (see below). Running the paid baseline and training the QLoRA adapter (S5) land next.
+> Status: **in progress (session 5 of ~5) — full pipeline built; the training run is next.** The
+> extraction contract, vendored normalization, config/tracking layer, and design decisions are built
+> and tested; the base model is **chosen from data** — **Bielik-1.5B, few-shot** (see below); the
+> **prose→JSON dataset is collected, leakage-guarded, and split by publication date**; the
+> **labeling-QA triangulation**, the **S4 evaluation harness**, and the **S5 QLoRA trainer +
+> inference** (Colab GPU, with all pure parts tested locally) are built (see below). What remains is
+> *running* it: the paid API baseline and the QLoRA fine-tune on Colab, which populate the table.
 > Evaluation numbers below are shown as an **empty shape**, not invented values.
 
 ## Why it's built this way
@@ -156,6 +157,37 @@ prose and are **never committed**; only the report is versioned. Egress is hard-
 core install, tests, and CI stay fully offline. The report answers the headline question: *does a 1.5B
 local LoRA rival a frontier API on this task at a fraction of the cost/latency?*
 
+### Training — QLoRA fine-tune on Colab (ADR-0006)
+
+S5 fine-tunes Bielik-1.5B with QLoRA and produces the base/adapter predictions that complete the
+table. The method: **zero-shot completion SFT** — each record is *exactly* the zero-shot eval prompt
+with the gold JSON as the target, prompt tokens masked so the model trains only on the JSON (learning
+the stop token that the base model, which rambles, lacks). LoRA over **all linear layers**
+(r=16/α=32, NF4 4-bit); an **inner temporal dev split** (newest ~10% of train) governs checkpoint
+selection so the **142-record test set is scored exactly once** — the fairness guard, since the API
+baselines get no tuning. Salary is honestly a data-availability ceiling (the leakage guard keeps it
+out of the prose the model sees), so `tech_expected` F1 is the metric to watch.
+
+Training needs a **Linux GPU** (bitsandbytes has no Windows/CPU build), so it runs on Colab via
+[`notebooks/train_qlora.ipynb`](notebooks/train_qlora.ipynb); the GPU stack lives in
+`requirements-train.txt` and is installed **only there** (ADR-0004). The whole repo is driven from
+the notebook — it only invokes these scripts:
+
+```bash
+# on Colab (GPU), after `pip install -r requirements-train.txt`:
+python -m pl_jobs_lora.train.qlora --push                 # fine-tune; push the adapter to HF
+python -m pl_jobs_lora.inference.predict_hf --base --lora  # base (adapter off) + LoRA predictions
+python -m pl_jobs_lora.eval.run --report                   # merge every variant into the table
+```
+
+`predict_hf` reuses the shared prompt + parser + greedy decoding (token cap = `eval.max_tokens`), and
+loads the base and the adapter from the *same* 4-bit weights with only the adapter toggled — so the
+adapter-vs-base comparison isolates one variable. Its predictions carry no token counts, so the report
+prices them at ~$0 (local). The pure parts — SFT formatting, the temporal dev split, completion
+masking — are tested on the local CPU `.venv`; the GPU orchestration is exercised only on Colab.
+`inference/predict_gguf.py` optionally times the base on **local CPU via GGUF** for the latency column
+(the adapter is not GGUF-converted). See [ADR-0006](docs/decisions/0006-qlora-training-method.md).
+
 ## Evaluation (shape — populated in later sessions)
 
 | Variant | JSON valid | Seniority F1 | Tech F1 | Work-mode F1 | Salary acc | Median cost | Median latency |
@@ -183,6 +215,7 @@ via `it-job-radar`.
 - [ADR-0003 — per-field metrics with a pure scorer](docs/decisions/0003-evaluation-methodology.md)
 - [ADR-0004 — Colab training, hosted MLflow, HF Hub artifacts](docs/decisions/0004-training-infra.md)
 - [ADR-0005 — labeling-QA: adjudication authority + the proposer instrument](docs/decisions/0005-labeling-qa-architecture.md)
+- [ADR-0006 — QLoRA training method: zero-shot completion SFT of Bielik-1.5B](docs/decisions/0006-qlora-training-method.md)
 - [F6 — data-availability verdict](docs/research/f6-data-availability.md)
 
 ## License
