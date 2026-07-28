@@ -1,10 +1,11 @@
 """Config loads into frozen dataclasses; the tracking URI honors the env override."""
 
+import dataclasses
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from pl_jobs_lora.config import load_config
+from pl_jobs_lora.config import LabelingQaConfig, _validate_labeling_qa, load_config
 from pl_jobs_lora.tracking import resolve_tracking_uri
 
 
@@ -32,3 +33,48 @@ def test_tracking_uri_falls_back_to_config(monkeypatch):
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     # config ships tracking_uri: null → local store
     assert resolve_tracking_uri() is None
+
+
+def test_labeling_qa_block_loads(monkeypatch):
+    cfg = load_config()
+    lq = cfg.labeling_qa
+    assert lq.proposer_backend == "gguf"  # api is the deferred seam (ADR-0005)
+    assert lq.proposer in {m.key for m in cfg.models}  # proposer references a real candidate
+    assert lq.proposer != lq.arbiter  # arbiter distinct → LLM<->human isn't self-agreement
+    assert 60 <= lq.human_sample_size <= 80
+    assert lq.arbiter_max_snippets > 0
+    assert lq.validated_f1 is None  # soft flag off by default, never a gate
+
+
+def _valid_lq(**overrides) -> LabelingQaConfig:
+    base = dict(
+        proposer_backend="gguf", proposer="bielik-1.5b", proposer_mode="few",
+        arbiter="claude-opus-4-8", arbiter_max_snippets=80, human_sample_size=72,
+        sampling="stratified", sampling_seed=20260728, validated_f1=None,
+    )
+    return LabelingQaConfig(**{**base, **overrides})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"proposer_backend": "api"},        # deferred seam must fail fast (YAGNI)
+        {"proposer": "gpt-nonexistent"},    # unknown candidate key
+        {"proposer_mode": "many"},          # not zero|few
+        {"sampling": "grid"},               # not random|stratified
+        {"human_sample_size": 0},           # must be positive
+        {"arbiter_max_snippets": 0},        # egress cap must be positive
+    ],
+)
+def test_labeling_qa_validation_rejects_bad_config(overrides):
+    cfg = load_config()
+    with pytest.raises(ValueError):
+        _validate_labeling_qa(_valid_lq(**overrides), cfg.models)
+
+
+def test_labeling_qa_config_is_frozen():
+    lq = _valid_lq()
+    with pytest.raises(FrozenInstanceError):
+        lq.human_sample_size = 5  # type: ignore[misc]
+    # sanity: the helper builds a fully-populated dataclass (no missing fields)
+    assert len(dataclasses.fields(LabelingQaConfig)) == len(dataclasses.asdict(lq))

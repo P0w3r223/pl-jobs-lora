@@ -38,6 +38,19 @@ collection:
 scoring:
   salary_rel_tolerance: 0.05   # ±5% on amount_from/amount_to
 
+# Triangulated labeling-QA knobs (S3; ADR-0005). The proposer labels from prose at full scale;
+# the arbiter is the strong-model first pass on the human-checked sample.
+labeling_qa:
+  proposer_backend: gguf         # gguf|api — seam kept, only gguf implemented (YAGNI); api fails fast
+  proposer: bielik-1.5b          # must match a models.candidates[].key
+  proposer_mode: few             # zero|few — the chosen base is few-shot (ADR-0001)
+  arbiter: claude-opus-4-8       # API arbiter model id (ADR-0005); distinct from the proposer
+  arbiter_max_snippets: 80       # hard egress cap: PII-free prose snippets sent to the arbiter
+  human_sample_size: 72          # 60–80; the human-adjudicated gold sample
+  sampling: stratified           # random|stratified (by LLM<->platform disagreement)
+  sampling_seed: 20260728        # deterministic sample draw
+  validated_f1: null             # soft flag surfaced in the report — NOT a pass/fail gate
+
 data:
   sitemap_offers_sample: 800                  # target dataset size (S2); 314 in the old DB
   test_fraction: 0.2                          # temporal split: newest 20% -> test (ADR-0002)

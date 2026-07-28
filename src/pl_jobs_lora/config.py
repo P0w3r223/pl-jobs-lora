@@ -47,6 +47,19 @@ class ScoringConfig:
 
 
 @dataclass(frozen=True)
+class LabelingQaConfig:
+    proposer_backend: str
+    proposer: str
+    proposer_mode: str
+    arbiter: str
+    arbiter_max_snippets: int
+    human_sample_size: int
+    sampling: str
+    sampling_seed: int
+    validated_f1: float | None
+
+
+@dataclass(frozen=True)
 class DataConfig:
     sitemap_offers_sample: int
     test_fraction: float
@@ -74,6 +87,7 @@ class Config:
     tracking: TrackingConfig
     collection: CollectionConfig
     scoring: ScoringConfig
+    labeling_qa: LabelingQaConfig
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -91,6 +105,8 @@ def load_config(path: Path | None = None) -> Config:
         raise ValueError("The base-model probe needs at least two candidates (ADR-0001).")
     probe_raw = dict(raw["probe"])
     probe_raw["shot_modes"] = tuple(probe_raw["shot_modes"])
+    labeling_qa = LabelingQaConfig(**raw["labeling_qa"])
+    _validate_labeling_qa(labeling_qa, candidates)
     return Config(
         models=candidates,
         probe=ProbeConfig(**probe_raw),
@@ -99,4 +115,32 @@ def load_config(path: Path | None = None) -> Config:
         tracking=TrackingConfig(**raw["tracking"]),
         collection=CollectionConfig(**raw["collection"]),
         scoring=ScoringConfig(**raw["scoring"]),
+        labeling_qa=labeling_qa,
     )
+
+
+def _validate_labeling_qa(
+    cfg: LabelingQaConfig, candidates: tuple[ModelCandidate, ...]
+) -> None:
+    """Fail fast on labeling-QA knobs (ADR-0005) so a bad config never reaches the CLI."""
+    if cfg.proposer_backend != "gguf":
+        raise ValueError(
+            f"labeling_qa.proposer_backend={cfg.proposer_backend!r} is not implemented "
+            "(YAGNI); only 'gguf' is supported in S3 (ADR-0005)."
+        )
+    if cfg.proposer not in {c.key for c in candidates}:
+        raise ValueError(
+            f"labeling_qa.proposer={cfg.proposer!r} is not a known models.candidates key."
+        )
+    if cfg.proposer_mode not in {"zero", "few"}:
+        raise ValueError(
+            f"labeling_qa.proposer_mode must be 'zero' or 'few', got {cfg.proposer_mode!r}."
+        )
+    if cfg.sampling not in {"random", "stratified"}:
+        raise ValueError(
+            f"labeling_qa.sampling must be 'random' or 'stratified', got {cfg.sampling!r}."
+        )
+    if cfg.human_sample_size <= 0:
+        raise ValueError("labeling_qa.human_sample_size must be positive.")
+    if cfg.arbiter_max_snippets <= 0:
+        raise ValueError("labeling_qa.arbiter_max_snippets must be positive.")
