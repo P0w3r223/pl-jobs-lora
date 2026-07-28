@@ -12,7 +12,37 @@ import pytest
 
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.dataset.collect import DevExample
-from pl_jobs_lora.eval.baselines import run_baseline_inference, run_baselines
+from pl_jobs_lora.eval.baselines import _api_generate, run_baseline_inference, run_baselines
+
+
+class _Block:
+    def __init__(self, type, text=None):
+        self.type = type
+        self.text = text
+
+
+class _Usage:
+    def __init__(self, input_tokens, output_tokens):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class _Resp:
+    def __init__(self, content, usage):
+        self.content = content
+        self.usage = usage
+
+
+class _FakeClient:
+    """Duck-typed stand-in for anthropic.Anthropic — records the call, returns a canned response."""
+
+    def __init__(self, resp):
+        self._resp = resp
+        self.messages = self
+
+    def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        return self._resp
 
 
 def _gold(**over):
@@ -106,3 +136,26 @@ def test_run_baselines_writes_a_file_per_variant(tmp_path):
     # eval set is the frozen test split (2 records); shots are the train head, excluded from eval
     assert len(out["claude-haiku-4-5__zero"]) == 2
     assert [p["offer_id"] for p in out["claude-haiku-4-5__few"]] == ["e0", "e1"]
+
+
+# -- response mapping: the lines that only run against a real Anthropic response ------------------
+
+def test_api_generate_joins_text_and_reads_usage():
+    cfg = load_config()
+    resp = _Resp([_Block("text", '{"title": "Dev"}')], _Usage(1200, 300))
+    client = _FakeClient(resp)
+    messages = [{"content": "sys"}, {"role": "user", "content": "x"}]
+    raw, in_tok, out_tok = _api_generate(client, cfg, messages)
+    assert raw == '{"title": "Dev"}' and in_tok == 1200 and out_tok == 300
+    # the system block is split off; the model + decoding caps come from config (fairness)
+    assert client.last_kwargs["model"] == cfg.eval.api_model
+    assert client.last_kwargs["system"] == "sys"
+    assert client.last_kwargs["temperature"] == cfg.eval.temperature
+
+
+def test_api_generate_concatenates_text_and_skips_non_text_blocks():
+    cfg = load_config()
+    resp = _Resp([_Block("text", "a"), _Block("thinking"), _Block("text", "b")], _Usage(1, 1))
+    messages = [{"content": "s"}, {"role": "user", "content": "x"}]
+    raw, _, _ = _api_generate(_FakeClient(resp), cfg, messages)
+    assert raw == "ab"

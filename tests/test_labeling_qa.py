@@ -9,6 +9,7 @@ import pytest
 
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.dataset.labeling_qa import (
+    _arbiter_label,
     arbiter_prefill,
     build_report,
     human_leg,
@@ -16,6 +17,7 @@ from pl_jobs_lora.dataset.labeling_qa import (
     split_shots_eval,
     to_dev_examples,
 )
+from pl_jobs_lora.normalize import load_tech_aliases, normalize_technology
 
 
 def _gold(**over):
@@ -88,6 +90,15 @@ def test_human_leg_accepts_nested_and_flat():
     assert legs[1] == {"offer_id": "b", "title": "U", "seniority": ["senior"]}
 
 
+def test_human_leg_normalizes_tech_only_with_alias_index():
+    """Hand-typed tech is canonicalized to match the LLM/platform legs (ADR-0005 parity)."""
+    aliases = load_tech_aliases()
+    rows = [{"offer_id": "a", "human_gold": {"tech_expected": ["ReactJS"]}}]
+    expected = [normalize_technology("ReactJS", aliases)]
+    assert human_leg(rows, aliases)[0]["tech_expected"] == expected
+    assert human_leg(rows)[0]["tech_expected"] == ["ReactJS"]  # default path unchanged
+
+
 # -- arbiter pre-fill (assembly only; label_fn injected, no network) ----------------------------
 
 def test_arbiter_prefill_fills_only_gold_fields():
@@ -119,6 +130,43 @@ def test_arbiter_prefill_respects_egress_cap():
     rows = [{"offer_id": "a", "prose": "p"}, {"offer_id": "b", "prose": "q"}]
     with pytest.raises(ValueError, match="egress cap"):
         arbiter_prefill(cfg, rows, label_fn=lambda prose: ({}, True))
+
+
+# -- arbiter response mapping (fake client; the tool-use extraction the network path relies on) ---
+
+class _Block:
+    def __init__(self, type, input=None):
+        self.type = type
+        self.input = input
+
+
+class _Resp:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FakeClient:
+    def __init__(self, resp):
+        self._resp = resp
+        self.messages = self
+
+    def create(self, **kwargs):
+        return self._resp
+
+
+def test_arbiter_label_extracts_tool_use_and_normalizes():
+    cfg = load_config()
+    resp = _Resp([_Block("tool_use", input={"title": "Dev", "seniority": ["mid"]})])
+    parsed, valid = _arbiter_label(_FakeClient(resp), cfg, "prose", load_tech_aliases())
+    assert valid is True
+    assert parsed["title"] == "Dev" and parsed["seniority"] == ["mid"]
+
+
+def test_arbiter_label_without_tool_use_returns_none():
+    cfg = load_config()
+    resp = _Resp([_Block("text")])  # no tool_use block -> arbiter emitted nothing structured
+    parsed, valid = _arbiter_label(_FakeClient(resp), cfg, "prose", load_tech_aliases())
+    assert parsed is None and valid is False
 
 
 # -- offline report build (no model, no network) ---------------------------------------------------

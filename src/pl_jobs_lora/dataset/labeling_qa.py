@@ -25,7 +25,7 @@ from pl_jobs_lora.dataset import agreement
 from pl_jobs_lora.dataset.agreement import AgreementReport
 from pl_jobs_lora.dataset.collect import DevExample
 from pl_jobs_lora.eval.prompt import build_messages, parse_output
-from pl_jobs_lora.normalize import load_tech_aliases
+from pl_jobs_lora.normalize import load_tech_aliases, normalize_technology
 from pl_jobs_lora.schema import JobPosting
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -91,12 +91,27 @@ def llm_leg(proposals: list[dict]) -> list[dict]:
     ]
 
 
-def human_leg(rows: list[dict]) -> list[dict]:
-    """Accept either review-queue rows (nested ``human_gold``) or flat hand-authored records."""
+def human_leg(rows: list[dict], alias_index: dict[str, str] | None = None) -> list[dict]:
+    """Accept review-queue rows (nested ``human_gold``) or flat hand-authored records.
+
+    Hand-typed labels skip the parser the LLM and platform legs pass through, so when an
+    ``alias_index`` is supplied the open-vocabulary tech fields are canonicalized here — otherwise
+    ``ReactJS`` vs ``react`` would score as a spurious disagreement against the already-normalized
+    legs (ADR-0005 assumes all three legs are normalized before the exact set comparison).
+    """
     out = []
     for row in rows:
         hg = row.get("human_gold", row)
-        out.append({"offer_id": row["offer_id"], **{k: hg[k] for k in _GOLD_FIELDS if k in hg}})
+        fields = {k: hg[k] for k in _GOLD_FIELDS if k in hg}
+        if alias_index is not None:
+            for f in ("tech_expected", "tech_optional"):
+                vals = fields.get(f)
+                if vals:
+                    fields[f] = [
+                        normalize_technology(t, alias_index)
+                        for t in vals if isinstance(t, str) and t.strip()
+                    ]
+        out.append({"offer_id": row["offer_id"], **fields})
     return out
 
 
@@ -297,7 +312,7 @@ def build_report(
     if human_path.exists():
         rows = _read_jsonl(human_path)
         _validate_human_gold(rows)
-        human = human_leg(rows)
+        human = human_leg(rows, load_tech_aliases())  # canonicalize hand-typed tech (ADR-0005)
         n_sample = len(human)
         llm_vs_human = agreement.pairwise(llm, human, salary_rel_tolerance=tol)
         platform_vs_human = agreement.pairwise(plat, human, salary_rel_tolerance=tol)

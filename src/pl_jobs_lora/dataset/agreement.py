@@ -249,7 +249,11 @@ def _pairwise_md(r: PairwiseReport) -> str:
         rows.append(
             f"| {f} | {m['agreement']} | {m['f1']} | {m['exact_match']} | {m.get('kappa', 'n/a')} |"
         )
-    rows.append(f"| salary | {r.salary} | | | |")
+    sal = r.salary
+    rows.append(
+        f"| salary (cur/kind/amt) | "
+        f"{sal.get('currency')}/{sal.get('kind')}/{sal.get('amount')} | | | |"
+    )
     return "\n".join(rows)
 
 
