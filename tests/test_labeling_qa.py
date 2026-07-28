@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 
@@ -170,6 +171,30 @@ def test_build_report_without_human_has_only_full_leg(tmp_path):
     d = report.as_dict()
     assert d["llm_vs_platform"]["n"] == 1
     assert d["llm_vs_human"] is None and d["triangulation"] is None
+
+
+# -- committed fixtures (offline, runs in CI) ------------------------------------------------------
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "data" / "fixtures" / "labeling_qa"
+
+
+def test_build_report_over_committed_fixtures():
+    """The on-disk contract stays stable: build the full report from the synthetic PII-free set."""
+    cfg = load_config()
+    report = build_report(
+        cfg,
+        processed_dir=_FIXTURES / "processed",
+        proposals_path=_FIXTURES / "proposals.jsonl",
+        human_path=_FIXTURES / "human_gold.jsonl",
+    )
+    d = report.as_dict()
+    assert d["llm_vs_platform"]["n"] == 4   # fx-002..005 proposed; fx-001 is a shot, excluded
+    assert d["metadata"]["n_sample"] == 2   # fx-002, fx-004 hand-adjudicated
+    tri = d["triangulation"]["per_field"]
+    # fx-004: LLM==human on work_mode/tech_expected but platform is empty/short -> gap caught
+    assert tri["work_mode"]["platform_gap_caught"] == 1
+    assert tri["work_mode"]["all_agree"] == 1
+    assert tri["tech_expected"]["platform_gap_caught"] == 1
 
 
 def _write_jsonl(path, rows):
