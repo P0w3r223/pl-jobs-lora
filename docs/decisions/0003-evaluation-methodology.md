@@ -45,3 +45,16 @@ Option B.
   narrow task at a fraction of the cost/latency?*
 - A deliberately broken prompt must show visibly lower scores (regression is visible), the same
   property P2/P3's harnesses guarantee.
+
+## Implementation (S4)
+
+Resolved 2026-07-28. `eval/scoring.py` is the pure per-field scorer (built in S1 for the probe);
+S4 adds `eval/baselines.py` (zero-/few-shot API baselines over the frozen test set), `eval/pricing.py`
+(pure cost/latency economics), and `eval/report.py` (pure aggregation → `results/eval/report.{json,md}`),
+driven by `eval/run.py` (`--baselines` paid, `--report` offline). The **baseline API model is
+`claude-haiku-4-5`** (cheap frontier — sharpens the "cheap API vs own LoRA" cost axis); model IDs and
+per-MTok pricing live in `configs/config.yaml`, pulled at implementation time, not from memory. The
+baseline generates **plain text** with the shared probe prompt (no forced tool call) so JSON validity
+stays a metric it can fail; the Anthropic client is a lazy `api` extra, so tests/CI stay offline. The
+report merges any `predictions/{variant}.jsonl`, so the base/QLoRA runs from S5 drop into the same
+table. The paid baseline run and the QLoRA adapter (S5) are pending.

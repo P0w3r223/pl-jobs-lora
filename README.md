@@ -10,12 +10,13 @@ labeled with a triangulated QA loop, and every model variant is scored by one sh
 argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
 task at a fraction of the cost — and here is the measurement.*
 
-> Status: **in progress (session 2 of ~5) — dataset built.** The extraction contract, vendored
-> normalization, config/tracking layer, and design decisions are built and tested; the base model is
-> **chosen from data** — **Bielik-1.5B, few-shot** (see below); and the **prose→JSON dataset is now
-> collected, leakage-guarded, and split by publication date** (see below). Labeling-QA (agreement
-> report), API baselines, and the trained adapter land in the next sessions. Evaluation numbers below
-> are shown as an **empty shape**, not invented values.
+> Status: **in progress (session 4 of ~5) — dataset + eval harness built.** The extraction contract,
+> vendored normalization, config/tracking layer, and design decisions are built and tested; the base
+> model is **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON dataset is
+> collected, leakage-guarded, and split by publication date**; the **labeling-QA triangulation** and
+> the **S4 evaluation harness** (zero-/few-shot API baselines + the pure comparison report) are built
+> and tested (see below). Running the paid baseline and training the QLoRA adapter (S5) land next.
+> Evaluation numbers below are shown as an **empty shape**, not invented values.
 
 ## Why it's built this way
 
@@ -129,6 +130,31 @@ are **never committed** — only the numbers-only `results/labeling_qa/report.{j
 Egress is a single point, hard-capped at ≤80 PII-free prose snippets to the arbiter; the Anthropic
 client is an optional `api` extra imported lazily, so the core install, tests, and CI stay offline
 (CI exercises the agreement layer on synthetic `data/fixtures/labeling_qa/` only).
+
+### Evaluation — API baselines + comparison report (ADR-0003)
+
+S4 completes the `eval/` module: the **zero-/few-shot API baselines** and the **comparison report**
+that scores every variant on accuracy × cost × latency. The baseline API model is a cheap frontier
+model (`claude-haiku-4-5`); it reuses the **same prompt as the probe** and generates **plain text**
+(not a forced tool call), so JSON validity stays a first-class metric the model can fail — the only
+variable across variants is the model.
+
+```bash
+.venv/Scripts/python -m pl_jobs_lora.eval.run --baselines   # zero-/few-shot over test set (paid, network)
+.venv/Scripts/python -m pl_jobs_lora.eval.run --report      # score every predictions file (offline)
+```
+
+`--baselines` runs the frozen test set through the API and writes
+`results/eval/predictions/{model}__{mode}.jsonl` (per-call token counts + latency); it needs
+`ANTHROPIC_API_KEY` and the optional `api` extra. `--report` is **pure and offline**: it scores each
+predictions file with the ADR-0003 scorer, folds in API cost (tokens × list price, pulled from
+`config.yaml`) and p50/p95 latency, and writes the numbers-only `results/eval/report.{json,md}`.
+Variants without token counts — the local base/LoRA/GGUF runs (~$0 marginal) — report no cost, so the
+same report merges the API baselines with predictions dropped in later from Colab. Predictions echo
+prose and are **never committed**; only the report is versioned. Egress is hard-capped at
+`eval.request_max_snippets` per run, and the Anthropic client is imported lazily (`api` extra), so the
+core install, tests, and CI stay fully offline. The report answers the headline question: *does a 1.5B
+local LoRA rival a frontier API on this task at a fraction of the cost/latency?*
 
 ## Evaluation (shape — populated in later sessions)
 
