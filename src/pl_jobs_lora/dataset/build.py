@@ -12,7 +12,6 @@ so the dataset build is deterministic and unit-testable; I/O lives in ``dataset.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict
 
 from pl_jobs_lora.dataset.collect import DevExample
 
@@ -21,6 +20,15 @@ from pl_jobs_lora.dataset.collect import DevExample
 _SIGNAL_FIELDS = (
     "title", "seniority", "work_mode", "tech_expected", "tech_optional", "salary",
 )
+
+# Unicode line separators theprotocol occasionally embeds in prose. \n-based readers are safe,
+# but Unicode-aware splitters (str.splitlines, some JS tooling) would corrupt the line — so
+# fold them to \n at the dataset boundary, keeping the frozen prose clean text.
+_LINE_SEPARATORS = str.maketrans({"\u2028": "\n", "\u2029": "\n", "\u0085": "\n"})
+
+
+def _clean_prose(prose: str) -> str:
+    return prose.translate(_LINE_SEPARATORS)
 
 
 def _prose_key(prose: str) -> str:
@@ -39,14 +47,17 @@ def build_record(ex: DevExample, *, min_prose_chars: int) -> dict | None:
     Drops offers that are too short to learn from, undatable (no temporal split key), or
     label-empty. The record is a plain dict (``offer_id``, ``url``, ``pub_date``, ``prose``,
     ``gold``) so it serializes directly and stays decoupled from the collector dataclass."""
-    if len(ex.prose) < min_prose_chars:
+    prose = _clean_prose(ex.prose)
+    if len(prose) < min_prose_chars:
         return None
     if not ex.pub_date:
         return None  # temporal split (ADR-0002) needs a publication date
     if not _has_signal(ex.gold):
         return None
-    row = asdict(ex)
-    return {k: row[k] for k in ("offer_id", "url", "pub_date", "prose", "gold")}
+    return {
+        "offer_id": ex.offer_id, "url": ex.url, "pub_date": ex.pub_date,
+        "prose": prose, "gold": ex.gold,
+    }
 
 
 def dedupe(records: list[dict]) -> list[dict]:
