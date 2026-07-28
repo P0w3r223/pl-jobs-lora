@@ -72,7 +72,7 @@ def temporal_dev_split(records: list[dict], dev_fraction: float) -> tuple[list[d
         return (r.get("pub_date") is not None, r.get("pub_date") or "")
 
     ordered = sorted(records, key=_key)
-    n_dev = max(1, round(len(ordered) * dev_fraction))
+    n_dev = min(max(1, round(len(ordered) * dev_fraction)), len(ordered) - 1)  # keep >=1 train
     return ordered[:-n_dev], ordered[-n_dev:]
 
 
@@ -85,27 +85,33 @@ def encode_example(tokenizer, sft: dict, max_seq_len: int) -> dict:
     """Tokenize one SFT example with the model's chat template; keep the completion whole.
 
     Uses ``tokenizer.apply_chat_template`` so Bielik's own special/EOS tokens are used (never
-    hand-rolled). On overflow the completion is preserved and the prompt is trimmed from its tail —
-    the prose sits at the end of the prompt, so this drops prose, never the JSON target (ADR-0006).
+    hand-rolled), and asserts the prompt is a token-exact prefix of the full sequence so a chat
+    template that breaks that assumption fails loudly instead of silently mis-masking every example.
+    On overflow only the posting (the last user message) is shortened — never the completion or the
+    fixed system/schema/assistant-header scaffold — so the JSON target is always trained whole
+    (ADR-0006). ``max_seq_len`` is sized to ~p99 on Colab (Step 0), so this rarely fires.
     """
-    prompt_ids = tokenizer.apply_chat_template(sft["prompt_messages"], add_generation_prompt=True)
-    full_msgs = sft["prompt_messages"] + [{"role": "assistant", "content": sft["completion"]}]
-    full_ids = tokenizer.apply_chat_template(full_msgs, add_generation_prompt=False)
+    def _ids(messages, *, with_completion):
+        msgs = messages + (
+            [{"role": "assistant", "content": sft["completion"]}] if with_completion else []
+        )
+        return tokenizer.apply_chat_template(msgs, add_generation_prompt=not with_completion)
 
-    if len(full_ids) > max_seq_len:
-        comp_ids = full_ids[len(prompt_ids):]          # completion + terminator, kept whole
-        budget = max_seq_len - len(comp_ids)
-        if budget <= 0:                                # completion alone overflows (degenerate)
-            full_ids, prompt_len = comp_ids[-max_seq_len:], 0
-        else:
-            prompt_ids = prompt_ids[:budget]           # trim the prose tail of the prompt
-            full_ids, prompt_len = prompt_ids + comp_ids, len(prompt_ids)
-    else:
-        prompt_len = len(prompt_ids)
+    messages = sft["prompt_messages"]
+    prompt_ids = _ids(messages, with_completion=False)
+    full_ids = _ids(messages, with_completion=True)
+    assert full_ids[: len(prompt_ids)] == prompt_ids, "chat template broke the prompt prefix"
+
+    posting = messages[-1]["content"]
+    while len(full_ids) > max_seq_len and posting:
+        posting = posting[: -max(1, len(posting) // 10)]  # shrink the posting tail, re-template
+        messages = [*messages[:-1], {**messages[-1], "content": posting}]
+        prompt_ids = _ids(messages, with_completion=False)
+        full_ids = _ids(messages, with_completion=True)
 
     return {
         "input_ids": full_ids,
-        "labels": completion_labels(prompt_len, full_ids),
+        "labels": completion_labels(len(prompt_ids), full_ids),
         "attention_mask": [1] * len(full_ids),
     }
 
@@ -153,10 +159,11 @@ def run_training(cfg: Config, *, processed_dir: Path = _PROCESSED, out_dir: Path
 
     train_ds, dev_ds = encode(train_recs), encode(dev_recs)
 
+    compute_dtype = torch.bfloat16 if t.compute_dtype == "bf16" else torch.float16
     quant = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type=t.bnb_4bit_quant_type,
         bnb_4bit_use_double_quant=t.bnb_4bit_use_double_quant,
-        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_compute_dtype=compute_dtype,
     )
     model = AutoModelForCausalLM.from_pretrained(
         base.hf_repo, quantization_config=quant, device_map="auto"
@@ -174,7 +181,8 @@ def run_training(cfg: Config, *, processed_dir: Path = _PROCESSED, out_dir: Path
         warmup_ratio=t.warmup_ratio, per_device_train_batch_size=t.per_device_batch_size,
         per_device_eval_batch_size=t.per_device_batch_size,
         gradient_accumulation_steps=t.grad_accum_steps,
-        fp16=True, gradient_checkpointing=True, optim="paged_adamw_8bit", seed=t.seed,
+        fp16=(t.compute_dtype == "fp16"), bf16=(t.compute_dtype == "bf16"),
+        gradient_checkpointing=True, optim="paged_adamw_8bit", seed=t.seed,
         eval_strategy="epoch", save_strategy="epoch", logging_steps=10,
         load_best_model_at_end=True, metric_for_best_model="eval_loss", greater_is_better=False,
         report_to=[],

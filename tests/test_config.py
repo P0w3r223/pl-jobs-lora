@@ -5,7 +5,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from pl_jobs_lora.config import LabelingQaConfig, _validate_labeling_qa, load_config
+from pl_jobs_lora.config import (
+    LabelingQaConfig,
+    TrainConfig,
+    _validate_labeling_qa,
+    _validate_train,
+    load_config,
+)
 from pl_jobs_lora.tracking import resolve_tracking_uri
 
 
@@ -78,3 +84,40 @@ def test_labeling_qa_config_is_frozen():
         lq.human_sample_size = 5  # type: ignore[misc]
     # sanity: the helper builds a fully-populated dataclass (no missing fields)
     assert len(dataclasses.fields(LabelingQaConfig)) == len(dataclasses.asdict(lq))
+
+
+def test_train_block_loads():
+    t = load_config().train
+    assert t.base in {"qwen2.5-1.5b", "bielik-1.5b"}  # references a real candidate (ADR-0006)
+    assert t.target_modules == "all-linear" and t.lora_r > 0
+    assert t.compute_dtype in {"fp16", "bf16"}
+    assert 0.0 < t.dev_fraction < 1.0
+
+
+def _valid_train(**overrides) -> TrainConfig:
+    base = dict(
+        base="bielik-1.5b", lora_r=16, lora_alpha=32, lora_dropout=0.1, target_modules="all-linear",
+        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, compute_dtype="fp16",
+        epochs=3, learning_rate=2e-4, lr_scheduler="cosine", warmup_ratio=0.05,
+        per_device_batch_size=4, grad_accum_steps=4, max_seq_len=2048, dev_fraction=0.1,
+        seed=20260728,
+    )
+    return TrainConfig(**{**base, **overrides})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"base": "gpt-nonexistent"},      # unknown candidate key
+        {"lora_r": 0},                    # must be positive
+        {"lora_dropout": 1.0},            # must be within [0, 1)
+        {"compute_dtype": "int8"},        # not fp16|bf16
+        {"warmup_ratio": 1.5},            # must be within [0, 1)
+        {"epochs": 0},                    # must be positive
+        {"dev_fraction": 0.0},            # must be within (0, 1)
+    ],
+)
+def test_train_validation_rejects_bad_config(overrides):
+    cfg = load_config()
+    with pytest.raises(ValueError):
+        _validate_train(_valid_train(**overrides), cfg.models)
