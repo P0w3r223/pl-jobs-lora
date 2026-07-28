@@ -22,7 +22,8 @@ src/pl_jobs_lora/
   tracking.py     # MLflow wiring; MLFLOW_TRACKING_URI env wins over config
   dataset/        # collect + build + split (time-based) [S2 done]; labeling QA + agreement report [S3]
   eval/           # metrics, PURE scorer (predictions x gold), API baselines, report            [S4]
-  inference/      # predict_hf (Colab GPU), predict_gguf (local CPU)                             [S5]
+  train/          # qlora.py — Colab-only QLoRA fine-tune; pure SFT formatting testable locally [S5]
+  inference/      # predict_hf (Colab GPU, base +/- adapter), predict_gguf (local CPU latency)  [S5]
   probe.py        # base-model selection probe (Bielik-1.5B vs Qwen2.5-1.5B)                     [S1]
 configs/config.yaml       # all knobs
 requirements-train.txt    # Colab-only GPU deps (transformers/peft/bitsandbytes) — never local
