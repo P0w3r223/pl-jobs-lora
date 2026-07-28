@@ -72,7 +72,8 @@ def run_baseline_inference(
 
     ``generate_fn(messages) -> (raw, input_tokens, output_tokens)`` is injected in tests to run
     the assembly offline; in production it defaults to the lazy Anthropic client. Egress is
-    hard-capped at ``eval.request_max_snippets`` prose snippets — the single egress point of S4.
+    hard-capped at ``eval.request_max_snippets`` — the single egress point of S4; the cap bounds
+    the eval set (few-shot mode also sends the small fixed ``few_shot_examples`` train-head shots).
     """
     cap = cfg.eval.request_max_snippets
     if len(eval_set) > cap:
