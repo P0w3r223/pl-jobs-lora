@@ -98,8 +98,10 @@ is provisioned. Everything downstream replays this frozen dataset — collect on
 The current build: **800 offers fetched → 710 records** (90 reposts deduplicated by id and prose
 hash), split **568 train / 142 test** by publication date. Label coverage: title & work-mode 100%,
 seniority 99%, expected-tech 76%, salary 31% (salary is honestly sparse — often absent from the
-posting). Zero prose leaks the technologies widget (leakage guard), and train and test share **no
-offer id** and **no publication-date overlap** (train ends where test begins).
+posting). Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
+by the **dedupe-before-split** ordering: train and test share **no offer id** and **no prose hash**.
+The temporal cut is by publication date (train older, test newest); in this build it falls cleanly
+between two postings ~14 min apart.
 
 ## Evaluation (shape — populated in later sessions)
 

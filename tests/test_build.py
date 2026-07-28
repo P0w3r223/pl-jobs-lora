@@ -46,6 +46,14 @@ def test_build_record_keeps_offer_with_only_tech_signal():
     assert build_record(_ex("a", gold=gold), min_prose_chars=200) is not None
 
 
+def test_build_record_folds_unicode_line_separators():
+    # U+2028 / U+2029 / U+0085 embedded in prose become \n so the frozen text stays clean.
+    dirty = _LONG + "\u2028end\u2029x\u0085y"
+    rec = build_record(_ex("a", prose=dirty), min_prose_chars=200)
+    assert not any(sep in rec["prose"] for sep in ("\u2028", "\u2029", "\u0085"))
+    assert rec["prose"].endswith("\nend\nx\ny")
+
+
 def test_dedupe_by_offer_id():
     recs = [build_record(_ex("a"), min_prose_chars=200) for _ in range(2)]
     assert [r["offer_id"] for r in dedupe(recs)] == ["a"]
