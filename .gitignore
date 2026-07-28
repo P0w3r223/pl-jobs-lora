@@ -34,6 +34,12 @@ data/dataset_slice.json
 data/processed/
 data/*.log
 
+# S3 labeling QA (ADR-0005): proposals (replayed), the review queue + human gold (may echo prose)
+# are never committed — only the numbers-only report.{json,md} under results/labeling_qa/ is versioned.
+results/labeling_qa/proposals.jsonl
+results/labeling_qa/review_queue.jsonl
+results/labeling_qa/human_gold.jsonl
+
 # HF / MLflow local artifacts
 mlruns/
 .cache/

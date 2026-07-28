@@ -83,6 +83,31 @@ def raw_agreement(
     return hits / len(ids)
 
 
+def field_disagreements(
+    a_rec: dict, b_rec: dict, *, salary_rel_tolerance: float, fields=TRIANGULATION_FIELDS,
+) -> dict[str, bool]:
+    """Per-field flags for one record pair (True = the two sources differ on that field)."""
+    tol = salary_rel_tolerance
+    return {
+        f: not _field_equal(f, a_rec.get(f), b_rec.get(f), salary_rel_tolerance=tol)
+        for f in fields
+    }
+
+
+def disagreeing_ids(
+    a: list[dict], b: list[dict], *, salary_rel_tolerance: float, fields=TRIANGULATION_FIELDS,
+) -> list[str]:
+    """Matched offer ids where a and b differ on any field (the sampling disagreement stratum)."""
+    a_by, b_by = _by_id(a), _by_id(b)
+    return [
+        i for i in b_by
+        if i in a_by
+        and any(field_disagreements(
+            a_by[i], b_by[i], salary_rel_tolerance=salary_rel_tolerance, fields=fields,
+        ).values())
+    ]
+
+
 @dataclass
 class PairwiseReport:
     """One label-source pair: reused F1/exact + raw agreement + kappa (categorical) + salary."""
