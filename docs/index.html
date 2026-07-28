@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pl-jobs-lora — QLoRA for Polish job-posting extraction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font: 16px/1.55 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+         max-width: 820px; margin: 0 auto; padding: 32px 20px 56px; color: #1c2430; }
+  h1 { margin-bottom: 2px; font-weight: 700; letter-spacing: -0.01em; } .sub { color: #667085; margin-top: 0; }
+  h2 { font-weight: 600; margin-top: 0; }
+  .card { border: 1px solid #e3e7ee; border-radius: 12px; padding: 18px 20px; margin: 18px 0; }
+  .status { border-left: 4px solid #d97706; background: #fffaf0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid #eef1f6; }
+  th:first-child, td:first-child { text-align: left; }
+  code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  ul { padding-left: 1.1rem; } li { margin: 4px 0; }
+  footer { color: #667085; font-size: 0.85rem; margin-top: 24px; }
+  a { color: #2563eb; }
+</style>
+</head>
+<body>
+<h1>pl-jobs-lora</h1>
+<p class="sub">A QLoRA fine-tune of a small Polish LLM that turns Polish IT job-posting prose into
+structured JSON — compared honestly against zero-shot and few-shot API baselines on accuracy,
+cost, and latency.</p>
+
+<div class="card status">
+  <h2>Status: in progress</h2>
+  <p>The full pipeline is built and tested — the extraction contract, the prose→JSON dataset (leakage-guarded
+  and split by publication date), the triangulated labeling-QA loop, the shared evaluation harness, and the
+  QLoRA trainer. What remains is the execution: the paid API baseline and the fine-tune on a Colab GPU, which
+  populate the table below. The evaluation figures are therefore shown as an empty shape rather than invented
+  values.</p>
+</div>
+
+<div class="card">
+  <h2>Evaluation (shape — populated once the runs complete)</h2>
+  <p>Every variant is scored by the same model-free harness on the same frozen test set, per field. Both
+  sides are normalized through the vendored <code>it-job-radar</code> functions so paraphrases are not
+  penalized.</p>
+  <table>
+    <tr><th>Variant</th><th>JSON valid</th><th>Seniority F1</th><th>Tech F1</th><th>Work-mode F1</th><th>Salary acc</th><th>Median cost</th><th>Median latency</th></tr>
+    <tr><td>zero-shot (API)</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td>few-shot (API)</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td>base (untuned)</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td><strong>QLoRA (ours)</strong></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Method</h2>
+  <ul>
+    <li><strong>An own dataset, not an off-the-shelf one.</strong> The training data is built from the
+    sibling project <a href="https://github.com/P0w3r223/it-job-radar">it-job-radar</a>. The input is the
+    posting prose; the labels are triangulated from the platform's structured fields, an LLM reading only the
+    prose, and human adjudication of the disagreements.</li>
+    <li><strong>An apples-to-apples comparison.</strong> Zero-shot API, few-shot API, the untuned base, and
+    the QLoRA model are all scored by one pure harness on one frozen test set, per field.</li>
+    <li><strong>Cost as a first-class axis.</strong> The report answers the practical question — per one
+    thousand postings, an API at some price versus a fine-tuned model at approximately zero, and at what
+    accuracy.</li>
+    <li><strong>A base model chosen from data.</strong> Bielik-1.5B versus Qwen2.5-1.5B was decided by an
+    empirical probe: on a 23-posting development slice, Bielik-1.5B few-shot led on JSON validity and field
+    accuracy (0.91 valid, 0.32 field F1). Zero-shot Bielik emitting no valid JSON is precisely the gap the
+    fine-tune is meant to close.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Data and ethics</h2>
+  <p>Raw postings are never committed: prose is captured at collection time, the processed dataset is frozen
+  on the Hugging Face Hub, and only prose-derived fields leave the machine. Personal data is dropped, and
+  collection is a bounded, throttled sample rather than the whole base. Attribution: theprotocol.it, reused
+  via it-job-radar.</p>
+</div>
+
+<footer>
+  Portfolio project P4 · <a href="https://github.com/P0w3r223/pl-jobs-lora">source on GitHub</a> ·
+  prepared 2026-07-28
+</footer>
+</body>
+</html>
