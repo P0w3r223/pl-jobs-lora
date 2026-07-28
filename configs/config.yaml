@@ -66,6 +66,28 @@ labeling_qa:
   sampling_seed: 20260728        # deterministic sample draw
   validated_f1: null             # soft flag surfaced in the report — NOT a pass/fail gate
 
+# S5 QLoRA training method (ADR-0006). Colab-only trainer; every knob here, nothing hardcoded.
+# The base is the probe winner (Bielik-1.5B); inference decoding matches eval.max_tokens for parity.
+train:
+  base: bielik-1.5b               # must match a models.candidates[].key (its hf_repo is trained)
+  # LoRA over all linear layers, NF4 4-bit (ADR-0006)
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: all-linear      # PEFT auto-discovers every nn.Linear except the head
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  # regime — short, over-regularized run against the 568-example overfit risk
+  epochs: 3
+  learning_rate: 0.0002
+  lr_scheduler: cosine
+  warmup_ratio: 0.05
+  per_device_batch_size: 4
+  grad_accum_steps: 4             # effective batch 16
+  max_seq_len: 2048               # ESTIMATE — re-measure on Colab with the real Bielik tokenizer (~p99)
+  dev_fraction: 0.1               # newest 10% of train -> inner temporal dev (checkpoint selection)
+  seed: 20260728
+
 data:
   sitemap_offers_sample: 800                  # target dataset size (S2); 314 in the old DB
   test_fraction: 0.2                          # temporal split: newest 20% -> test (ADR-0002)
