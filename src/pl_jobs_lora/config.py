@@ -47,6 +47,19 @@ class ScoringConfig:
 
 
 @dataclass(frozen=True)
+class EvalConfig:
+    api_model: str
+    input_usd_per_mtok: float
+    output_usd_per_mtok: float
+    max_tokens: int
+    temperature: float
+    few_shot_examples: int
+    shot_modes: tuple[str, ...]
+    request_max_snippets: int
+    latency_percentiles: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class LabelingQaConfig:
     proposer_backend: str
     proposer: str
@@ -87,6 +100,7 @@ class Config:
     tracking: TrackingConfig
     collection: CollectionConfig
     scoring: ScoringConfig
+    eval: EvalConfig
     labeling_qa: LabelingQaConfig
 
 
@@ -105,6 +119,11 @@ def load_config(path: Path | None = None) -> Config:
         raise ValueError("The base-model probe needs at least two candidates (ADR-0001).")
     probe_raw = dict(raw["probe"])
     probe_raw["shot_modes"] = tuple(probe_raw["shot_modes"])
+    eval_raw = dict(raw["eval"])
+    eval_raw["shot_modes"] = tuple(eval_raw["shot_modes"])
+    eval_raw["latency_percentiles"] = tuple(eval_raw["latency_percentiles"])
+    eval_cfg = EvalConfig(**eval_raw)
+    _validate_eval(eval_cfg)
     labeling_qa = LabelingQaConfig(**raw["labeling_qa"])
     _validate_labeling_qa(labeling_qa, candidates)
     return Config(
@@ -115,8 +134,24 @@ def load_config(path: Path | None = None) -> Config:
         tracking=TrackingConfig(**raw["tracking"]),
         collection=CollectionConfig(**raw["collection"]),
         scoring=ScoringConfig(**raw["scoring"]),
+        eval=eval_cfg,
         labeling_qa=labeling_qa,
     )
+
+
+def _validate_eval(cfg: EvalConfig) -> None:
+    """Fail fast on eval knobs (ADR-0003) so a bad config never reaches the baseline CLI."""
+    unknown = set(cfg.shot_modes) - {"zero", "few"}
+    if unknown:
+        raise ValueError(f"eval.shot_modes must be a subset of {{zero, few}}, got {unknown}.")
+    if cfg.few_shot_examples < 0:
+        raise ValueError("eval.few_shot_examples must be non-negative.")
+    if cfg.input_usd_per_mtok <= 0 or cfg.output_usd_per_mtok <= 0:
+        raise ValueError("eval.{input,output}_usd_per_mtok must be positive (pull list price).")
+    if cfg.request_max_snippets <= 0:
+        raise ValueError("eval.request_max_snippets must be positive.")
+    if any(not 0 <= p <= 100 for p in cfg.latency_percentiles):
+        raise ValueError("eval.latency_percentiles must each be within [0, 100].")
 
 
 def _validate_labeling_qa(

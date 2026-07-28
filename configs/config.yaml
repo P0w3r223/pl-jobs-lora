@@ -38,6 +38,21 @@ collection:
 scoring:
   salary_rel_tolerance: 0.05   # ±5% on amount_from/amount_to
 
+# S4 evaluation (ADR-0003): zero-/few-shot API baselines + the comparison report. The API
+# baseline uses the SAME prompt as the probe (fairness — only the model differs) and is parsed
+# on plain text, so JSON validity stays a first-class metric. Pricing is pulled at implementation
+# time (per 1M tokens; Anthropic list price cached 2026-06-24), never hardcoded in code.
+eval:
+  api_model: claude-haiku-4-5      # cheap frontier baseline; the only variable vs the base/LoRA runs
+  input_usd_per_mtok: 1.0          # claude-haiku-4-5 input price, USD / 1M tokens
+  output_usd_per_mtok: 5.0         # claude-haiku-4-5 output price, USD / 1M tokens
+  max_tokens: 1024                 # decoding cap (matches the probe)
+  temperature: 0.0                 # greedy — decoding matched to the probe (only the model differs)
+  few_shot_examples: 2             # shots drawn from the train head (matches probe/labeling-QA)
+  shot_modes: [zero, few]          # the two API baselines
+  request_max_snippets: 200        # hard egress cap: prose snippets sent per baseline run
+  latency_percentiles: [50, 95]    # p50/p95 latency reported per variant (ADR-0003)
+
 # Triangulated labeling-QA knobs (S3; ADR-0005). The proposer labels from prose at full scale;
 # the arbiter is the strong-model first pass on the human-checked sample.
 labeling_qa:
