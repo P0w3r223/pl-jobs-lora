@@ -29,6 +29,11 @@ data/models/
 data/probe_slice.json
 results/probe/
 
+# S2 dataset: collected slice (replayed) + processed train/test — frozen on HF Hub, not git.
+data/dataset_slice.json
+data/processed/
+data/*.log
+
 # HF / MLflow local artifacts
 mlruns/
 .cache/

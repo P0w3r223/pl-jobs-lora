@@ -179,10 +179,11 @@ def _spread_sample(urls: list[str], n: int) -> list[str]:
     return urls[::step][:n]
 
 
-def collect_dev_slice(cfg: Config, alias_index: dict[str, str]) -> list[DevExample]:
-    """Fetch a bounded, throttled, spread slice of offers with prose + gold (raw HTML dropped)."""
-    session = _session(cfg)
-    urls = _spread_sample(fetch_sitemap_urls(cfg, session), cfg.probe.dev_slice_size)
+def _fetch_examples(
+    cfg: Config, session: requests.Session, urls: list[str], alias_index: dict[str, str]
+) -> list[DevExample]:
+    """Throttled fetch of each offer URL -> DevExample (prose + gold), skipping the unusable.
+    Raw HTML is never persisted; only prose-derived fields survive the loop."""
     out: list[DevExample] = []
     for url in urls:
         try:
@@ -195,5 +196,29 @@ def collect_dev_slice(cfg: Config, alias_index: dict[str, str]) -> list[DevExamp
             continue
         finally:
             time.sleep(cfg.collection.request_delay_s)
+    return out
+
+
+def collect_dev_slice(cfg: Config, alias_index: dict[str, str]) -> list[DevExample]:
+    """Fetch the small probe slice (``probe.dev_slice_size``) with prose + gold (ADR-0001)."""
+    session = _session(cfg)
+    urls = _spread_sample(fetch_sitemap_urls(cfg, session), cfg.probe.dev_slice_size)
+    out = _fetch_examples(cfg, session, urls, alias_index)
+    print(f"[collect] {len(urls)} urls -> {len(out)} usable")
+    return out
+
+
+def collect_dataset(
+    cfg: Config, alias_index: dict[str, str], limit: int = 0
+) -> list[DevExample]:
+    """Fetch the full S2 dataset slice: a bounded, throttled, spread sample of the sitemap.
+
+    Size is ``data.sitemap_offers_sample`` (~800); ``limit`` caps it for a smoke run. This is
+    the collection whose prose-derived output is frozen for the dataset — collect once, replay
+    thereafter (ADR-0002); raw HTML never leaves the machine."""
+    session = _session(cfg)
+    n = limit or cfg.data.sitemap_offers_sample
+    urls = _spread_sample(fetch_sitemap_urls(cfg, session), n)
+    out = _fetch_examples(cfg, session, urls, alias_index)
     print(f"[collect] {len(urls)} urls -> {len(out)} usable")
     return out

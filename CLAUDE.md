@@ -20,7 +20,7 @@ src/pl_jobs_lora/
   normalize.py    # vendored it-job-radar normalization (eval fairness)
   config.py       # configs/config.yaml -> frozen dataclasses; no hardcoded values
   tracking.py     # MLflow wiring; MLFLOW_TRACKING_URI env wins over config
-  dataset/        # collect (prose + labels + pub date), build, split (time-based), labeling, qa  [S2-S3]
+  dataset/        # collect + build + split (time-based) [S2 done]; labeling QA + agreement report [S3]
   eval/           # metrics, PURE scorer (predictions x gold), API baselines, report            [S4]
   inference/      # predict_hf (Colab GPU), predict_gguf (local CPU)                             [S5]
   probe.py        # base-model selection probe (Bielik-1.5B vs Qwen2.5-1.5B)                     [S1]

@@ -49,6 +49,8 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class DataConfig:
     sitemap_offers_sample: int
+    test_fraction: float
+    min_prose_chars: int
     hf_dataset_repo: str
 
 

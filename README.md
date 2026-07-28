@@ -10,10 +10,11 @@ labeled with a triangulated QA loop, and every model variant is scored by one sh
 argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
 task at a fraction of the cost — and here is the measurement.*
 
-> Status: **in progress (session 1 of ~5) — scaffold + base-model probe done.** The extraction
-> contract, vendored normalization, config/tracking layer, and design decisions are built and tested;
-> the base model is now **chosen from data** — **Bielik-1.5B, few-shot** (see below). The full
-> dataset, API baselines, and the trained adapter land in the next sessions. Evaluation numbers below
+> Status: **in progress (session 2 of ~5) — dataset built.** The extraction contract, vendored
+> normalization, config/tracking layer, and design decisions are built and tested; the base model is
+> **chosen from data** — **Bielik-1.5B, few-shot** (see below); and the **prose→JSON dataset is now
+> collected, leakage-guarded, and split by publication date** (see below). Labeling-QA (agreement
+> report), API baselines, and the trained adapter land in the next sessions. Evaluation numbers below
 > are shown as an **empty shape**, not invented values.
 
 ## Why it's built this way
@@ -75,6 +76,30 @@ over a live dev slice on **local CPU via GGUF**, scored by the pure harness:
 GGUFs download on demand; the slice, models, and per-run predictions/reports stay local (gitignored).
 Both candidates use matched **Q8_0** quantization (Bielik ships no q4). Results land in
 `results/probe/`; the decision and numbers are recorded in ADR-0001.
+
+### Dataset build (ADR-0002)
+
+Collects a bounded, throttled, spread sample of theprotocol offers, extracts **prose input** (titled
+`jsonSections` only — the technologies widget is dropped as a label leak) + **platform-gold labels** +
+publication date, filters the unusable, deduplicates reposts, and splits **by publication date**
+(newest 20% → test) — never randomly:
+
+```bash
+.venv/Scripts/python -m pl_jobs_lora.dataset.run --collect --limit 20   # smoke: fetch 20, build, split
+.venv/Scripts/python -m pl_jobs_lora.dataset.run --collect              # full ~800 collection + freeze
+.venv/Scripts/python -m pl_jobs_lora.dataset.run                        # replay cached slice, rebuild
+```
+
+The collected slice and processed `data/processed/{train,test}.jsonl` + `manifest.json` stay local
+(gitignored); freezing them on HF Hub (`--push`, needs `HF_TOKEN`) is deferred until the dataset repo
+is provisioned. Everything downstream replays this frozen dataset — collect once, never re-scrape
+(offers expire).
+
+The current build: **800 offers fetched → 710 records** (90 reposts deduplicated by id and prose
+hash), split **568 train / 142 test** by publication date. Label coverage: title & work-mode 100%,
+seniority 99%, expected-tech 76%, salary 31% (salary is honestly sparse — often absent from the
+posting). Zero prose leaks the technologies widget (leakage guard), and train and test share **no
+offer id** and **no publication-date overlap** (train ends where test begins).
 
 ## Evaluation (shape — populated in later sessions)
 

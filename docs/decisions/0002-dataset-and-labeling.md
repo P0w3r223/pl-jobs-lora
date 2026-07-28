@@ -42,5 +42,22 @@ lightening the human load.
   prose-derived fields leave the machine). Everything downstream replays the frozen dataset; CI runs
   the scorer on `data/fixtures/` only.
 - **Split:** temporal by publication date (train = older, test = newest N%), never random.
-- Open for S2/S3: the HF dataset repo ID + token (config placeholder today), and who adjudicates the
-  probe's 25-example gold (a strong-LLM first pass spot-checked by the human is acceptable for S1).
+
+## S2 resolution (2026-07-28)
+
+Dataset build shipped (`dataset/collect.collect_dataset` → `dataset/build` → `dataset/split` →
+`dataset/hf_dataset`, orchestrated by `dataset/run`). Decisions locked here:
+
+- **Split fraction:** `test_fraction = 0.2` (newest 20% → test), in config. The split sorts by
+  `(pub_date, offer_id)` for determinism and always leaves a non-empty train side.
+- **Usability filters (`build_record`):** drop offers under `min_prose_chars = 200`, without a
+  `pub_date` (no temporal key), or with no learnable gold signal. Reposts are deduplicated by offer id
+  and by a normalized prose hash, so the same posting can't leak across the train/test boundary.
+- **S2 label target = platform-gold** (the structured `__NEXT_DATA__` fields, normalized). The
+  triangulated LLM↔platform↔human **agreement QA is S3**, run over this frozen set — not a blocker for
+  freezing the dataset.
+- **HF push deferred:** `push_dataset` is implemented and gated on an `HF_TOKEN`; the processed JSONL
+  is frozen locally (`data/processed/`, gitignored) and uploaded once the dataset repo is provisioned,
+  mirroring the deferred GitHub publish. No re-collection is needed to push later.
+- Still open for S3: who adjudicates the human-checked gold sample (a strong-LLM first pass
+  spot-checked by the human is acceptable, as in S1).
