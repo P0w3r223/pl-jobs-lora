@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.dataset.labeling_qa import (
+    arbiter_prefill,
     build_report,
     human_leg,
     select_sample,
@@ -80,6 +85,39 @@ def test_human_leg_accepts_nested_and_flat():
     legs = human_leg([nested, flat])
     assert legs[0] == {"offer_id": "a", "title": "T", "seniority": ["mid"]}
     assert legs[1] == {"offer_id": "b", "title": "U", "seniority": ["senior"]}
+
+
+# -- arbiter pre-fill (assembly only; label_fn injected, no network) ----------------------------
+
+def test_arbiter_prefill_fills_only_gold_fields():
+    cfg = load_config()
+    rows = [{"offer_id": "a", "prose": "p", "human_gold": _gold()}]
+
+    def fake(prose):  # arbiter returns a full JobPosting dump incl. non-gold keys
+        return {"title": "Dev", "seniority": ["mid"], "responsibilities": ["x"]}, True
+
+    out = arbiter_prefill(cfg, rows, label_fn=fake)
+    assert out[0]["human_gold"]["title"] == "Dev"
+    assert out[0]["human_gold"]["seniority"] == ["mid"]
+    assert "responsibilities" not in out[0]["human_gold"]  # non-gold field dropped
+    assert out[0]["arbiter_valid"] is True
+
+
+def test_arbiter_prefill_invalid_output_leaves_empty_gold():
+    cfg = load_config()
+    rows = [{"offer_id": "a", "prose": "p"}]
+    out = arbiter_prefill(cfg, rows, label_fn=lambda prose: (None, False))
+    assert out[0]["human_gold"] == _gold()  # empty template unchanged
+    assert out[0]["arbiter_valid"] is False
+
+
+def test_arbiter_prefill_respects_egress_cap():
+    cfg = load_config()
+    lq = dataclasses.replace(cfg.labeling_qa, arbiter_max_snippets=1)
+    cfg = dataclasses.replace(cfg, labeling_qa=lq)
+    rows = [{"offer_id": "a", "prose": "p"}, {"offer_id": "b", "prose": "q"}]
+    with pytest.raises(ValueError, match="egress cap"):
+        arbiter_prefill(cfg, rows, label_fn=lambda prose: ({}, True))
 
 
 # -- offline report build (no model, no network) ---------------------------------------------------

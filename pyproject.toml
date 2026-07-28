@@ -35,6 +35,11 @@ dev = [
 gguf = [
     "llama-cpp-python>=0.3,<0.4",
 ]
+# Optional Anthropic client for the S3 labeling-QA arbiter (ADR-0005) and later S4 API baselines.
+# Imported lazily; the core .venv, pytest, and CI stay fully offline without it.
+api = [
+    "anthropic>=0.69,<1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
