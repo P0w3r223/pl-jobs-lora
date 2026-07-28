@@ -103,6 +103,33 @@ by the **dedupe-before-split** ordering: train and test share **no offer id** an
 The temporal cut is by publication date (train older, test newest); in this build it falls cleanly
 between two postings ~14 min apart.
 
+### Labeling QA (ADR-0005)
+
+Before trusting the platform-gold labels, S3 triangulates three independent label sources and reports
+their agreement. A local **Bielik-1.5B few-shot** proposer relabels every posting **from prose only**
+(a small-model *prose-recoverability floor*, not a quality claim); its labels are compared to the
+platform gold at full scale. A seeded, **disagreement-stratified 72-record sample** is then drawn for
+human adjudication, and a distinct API arbiter (`claude-opus-4-8`) pre-fills each sample so the human
+corrects contested cells instead of labeling from a blank form:
+
+```bash
+.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --propose   # Bielik few-shot over the set
+.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --sample     # seeded, stratified queue
+.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --arbiter    # pre-fill via the API arbiter
+#     -> hand-adjudicate every contested cell, save as results/labeling_qa/human_gold.jsonl
+.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --report     # agreement + triangulation
+```
+
+The report gives raw agreement, per-field F1 (reused scorer), and **Cohen's κ** for the categorical
+fields, plus a per-field **triangulation** bucketing each cell into *all-agree / platform-gap-caught
+(LLM==human≠platform) / LLM-error (platform==human≠LLM) / all-differ*. The agreement math
+(`dataset/agreement.py`) and the sampler are **pure and offline**; only `dataset/labeling_qa.py`
+touches the model, the network, and files. Proposals, the review queue, and human gold echo prose and
+are **never committed** — only the numbers-only `results/labeling_qa/report.{json,md}` is versioned.
+Egress is a single point, hard-capped at ≤80 PII-free prose snippets to the arbiter; the Anthropic
+client is an optional `api` extra imported lazily, so the core install, tests, and CI stay offline
+(CI exercises the agreement layer on synthetic `data/fixtures/labeling_qa/` only).
+
 ## Evaluation (shape — populated in later sessions)
 
 | Variant | JSON valid | Seniority F1 | Tech F1 | Work-mode F1 | Salary acc | Median cost | Median latency |
@@ -129,6 +156,7 @@ via `it-job-radar`.
 - [ADR-0002 — dataset construction + triangulated labeling QA](docs/decisions/0002-dataset-and-labeling.md)
 - [ADR-0003 — per-field metrics with a pure scorer](docs/decisions/0003-evaluation-methodology.md)
 - [ADR-0004 — Colab training, hosted MLflow, HF Hub artifacts](docs/decisions/0004-training-infra.md)
+- [ADR-0005 — labeling-QA: adjudication authority + the proposer instrument](docs/decisions/0005-labeling-qa-architecture.md)
 - [F6 — data-availability verdict](docs/research/f6-data-availability.md)
 
 ## License
