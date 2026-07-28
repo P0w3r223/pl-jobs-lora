@@ -61,3 +61,12 @@ Dataset build shipped (`dataset/collect.collect_dataset` → `dataset/build` →
   mirroring the deferred GitHub publish. No re-collection is needed to push later.
 - Still open for S3: who adjudicates the human-checked gold sample (a strong-LLM first pass
   spot-checked by the human is acceptable, as in S1).
+
+## S3 resolution (2026-07-28)
+
+The two items this ADR left open are decided in **[ADR-0005](0005-labeling-qa-architecture.md)**:
+the full-scale proposer is **local Bielik-1.5B few-shot** (a prose-recoverability floor, not a quality
+claim), and adjudication is **hybrid with an API arbiter** (`claude-opus-4-8`, distinct from the
+proposer) — the human adjudicates every contested cell on a **72-record, disagreement-stratified,
+seeded** sample drawn from all 710. The single egress point is ≤80 PII-free prose snippets to the
+arbiter, hard-capped in config.
