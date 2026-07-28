@@ -70,6 +70,12 @@ def test_temporal_dev_split_min_one_and_deterministic():
     assert [r["offer_id"] for r in a[0]] == [r["offer_id"] for r in b[0]]
 
 
+def test_temporal_dev_split_keeps_at_least_one_train_record():
+    recs = [_record(f"r{i}", pub_date=f"2026-01-{i + 1:02d}T00:00:00Z") for i in range(5)]
+    train, dev = temporal_dev_split(recs, 0.99)  # would round to all-dev without the clamp
+    assert len(train) >= 1 and len(train) + len(dev) == 5
+
+
 # -- masking + encoding ----------------------------------------------------------------------------
 
 def test_completion_labels_masks_the_prompt():
@@ -77,24 +83,40 @@ def test_completion_labels_masks_the_prompt():
 
 
 class _FakeTok:
-    """Deterministic chat template: prompt -> [1..5]; full (with completion) -> [1..5, 6, 7]."""
+    """ChatML-ish content-sensitive template: one token per whitespace word across messages, with an
+    assistant-header token inserted before any completion — present in BOTH the prompt and the full
+    sequence, so the prompt is a true token prefix (the invariant ``encode_example`` asserts). ids
+    are positional, so shortening a message's text reduces the token count."""
 
     def apply_chat_template(self, msgs, add_generation_prompt=False, **kw):
-        return [1, 2, 3, 4, 5] if add_generation_prompt else [1, 2, 3, 4, 5, 6, 7]
+        pre, comp = [], []
+        for m in msgs:
+            (comp if m["role"] == "assistant" else pre).extend(m["content"].split())
+        seq = [*pre, "<assist>", *comp]  # header sits between the prompt scaffold and completion
+        return list(range(len(seq)))
 
 
-_SFT = {"prompt_messages": [{"role": "user", "content": "x"}], "completion": "{}"}
+def _sft(posting_words: int):
+    return {
+        "prompt_messages": [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "Posting: " + " ".join(["w"] * posting_words)},
+        ],
+        "completion": "{}",  # one token
+    }
 
 
 def test_encode_example_no_truncation_masks_completion_only():
-    enc = encode_example(_FakeTok(), _SFT, max_seq_len=10)
-    assert enc["input_ids"] == [1, 2, 3, 4, 5, 6, 7]
-    assert enc["labels"] == [-100, -100, -100, -100, -100, 6, 7]
-    assert enc["attention_mask"] == [1] * 7
+    enc = encode_example(_FakeTok(), _sft(3), max_seq_len=50)
+    # completion is the single trailing token; everything before it is masked
+    assert enc["labels"][-1] == enc["input_ids"][-1]
+    assert enc["labels"].count(-100) == len(enc["input_ids"]) - 1
+    assert enc["attention_mask"] == [1] * len(enc["input_ids"])
 
 
-def test_encode_example_overflow_trims_prompt_keeps_completion():
-    enc = encode_example(_FakeTok(), _SFT, max_seq_len=6)
-    # completion [6,7] kept whole; budget 4 -> prompt trimmed to [1,2,3,4]
-    assert enc["input_ids"] == [1, 2, 3, 4, 6, 7]
-    assert enc["labels"] == [-100, -100, -100, -100, 6, 7]
+def test_encode_example_overflow_shrinks_posting_keeps_completion_and_header():
+    enc = encode_example(_FakeTok(), _sft(40), max_seq_len=8)
+    assert len(enc["input_ids"]) <= 8                       # shrunk to fit
+    assert enc["labels"][-1] == enc["input_ids"][-1]        # completion still trained
+    assert enc["labels"].count(-100) == len(enc["input_ids"]) - 1
+    assert enc["labels"].count(-100) >= 2                   # system + header scaffold kept

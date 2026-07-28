@@ -39,6 +39,8 @@ def run_gguf_predictions(
     base = resolve_base(cfg)
     test = _read_jsonl(processed_dir / "test.jsonl")
     train = _read_jsonl(processed_dir / "train.jsonl")
+    # shots + decoding come from the probe config (this reuses probe.run_inference wholesale); it is
+    # latency-only, so it need not match eval.few_shot_examples (same value today anyway).
     shots = to_dev_examples(train[: cfg.probe.few_shot_examples])
     eval_set = to_dev_examples(test[:limit] if limit else test)
 

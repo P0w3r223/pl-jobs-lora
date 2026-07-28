@@ -45,9 +45,10 @@ def load_base(cfg: Config):
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     t, base = cfg.train, resolve_base(cfg)
+    compute_dtype = torch.bfloat16 if t.compute_dtype == "bf16" else torch.float16
     quant = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type=t.bnb_4bit_quant_type,
-        bnb_4bit_use_double_quant=t.bnb_4bit_use_double_quant, bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=t.bnb_4bit_use_double_quant, bnb_4bit_compute_dtype=compute_dtype,
     )
     tokenizer = AutoTokenizer.from_pretrained(base.hf_repo)
     model = AutoModelForCausalLM.from_pretrained(
@@ -101,35 +102,45 @@ def run_inference(
     return preds
 
 
+def _hf_generate_factory(tokenizer, max_new_tokens: int):
+    """Build a ``generate_fn`` bound to a loaded model (the production seam)."""
+    def factory(model):
+        return lambda messages: hf_generate(model, tokenizer, messages, max_new_tokens)
+
+    return factory
+
+
 def run_predictions(
     cfg: Config, *, base: bool = True, lora: bool = False,
     processed_dir: Path = _PROCESSED, pred_dir: Path = _PRED_DIR, limit: int = 0,
+    load_fn=load_base, attach_fn=attach_adapter, generate_factory=None,
 ) -> dict[str, list[dict]]:
-    """Emit prediction files for the requested variants over the frozen test set. Needs a GPU."""
+    """Emit prediction files for the requested variants over the frozen test set. Needs a GPU.
+
+    ``load_fn``/``attach_fn``/``generate_factory`` are injectable seams so the fairness-critical
+    wiring (base-before-adapter ordering, variant naming, one 4-bit load with only the adapter
+    toggled) is exercised offline in tests without transformers/peft.
+    """
     base_key = resolve_base(cfg).key
     test = _read_jsonl(processed_dir / "test.jsonl")
     train = _read_jsonl(processed_dir / "train.jsonl")
     shots = to_dev_examples(train[: cfg.eval.few_shot_examples])
     eval_set = to_dev_examples(test[:limit] if limit else test)
 
-    model, tokenizer = load_base(cfg)
+    model, tokenizer = load_fn(cfg)
+    factory = generate_factory or _hf_generate_factory(tokenizer, cfg.eval.max_tokens)
     out: dict[str, list[dict]] = {}
 
     if base:
+        gen = factory(model)  # adapter disabled — the untuned base
         for mode in ("zero", "few"):
-            preds = run_inference(
-                cfg, eval_set, shots, mode=mode,
-                generate_fn=lambda m: hf_generate(model, tokenizer, m, cfg.eval.max_tokens),
-            )
+            preds = run_inference(cfg, eval_set, shots, mode=mode, generate_fn=gen)
             variant = f"{base_key}__{mode}"
             write_predictions(variant, preds, pred_dir)
             out[variant] = preds
     if lora:
-        lora_model = attach_adapter(model, cfg.hf.adapter_repo)
-        preds = run_inference(
-            cfg, eval_set, shots, mode="zero",
-            generate_fn=lambda m: hf_generate(lora_model, tokenizer, m, cfg.eval.max_tokens),
-        )
+        gen = factory(attach_fn(model, cfg.hf.adapter_repo))  # same 4-bit weights, adapter on
+        preds = run_inference(cfg, eval_set, shots, mode="zero", generate_fn=gen)
         variant = f"{base_key}-lora__zero"
         write_predictions(variant, preds, pred_dir)
         out[variant] = preds

@@ -77,6 +77,7 @@ train:
   target_modules: all-linear      # PEFT auto-discovers every nn.Linear except the head
   bnb_4bit_quant_type: nf4
   bnb_4bit_use_double_quant: true
+  compute_dtype: fp16             # fp16 (free-Colab T4/P100 — no bf16) | bf16 (A100/L4); train+inference in sync
   # regime — short, over-regularized run against the 568-example overfit risk
   epochs: 3
   learning_rate: 0.0002

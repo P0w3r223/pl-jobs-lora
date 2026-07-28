@@ -81,6 +81,7 @@ class TrainConfig:
     target_modules: str
     bnb_4bit_quant_type: str
     bnb_4bit_use_double_quant: bool
+    compute_dtype: str
     epochs: int
     learning_rate: float
     lr_scheduler: str
@@ -171,6 +172,10 @@ def _validate_train(cfg: TrainConfig, candidates: tuple[ModelCandidate, ...]) ->
         raise ValueError("train.lora_r and train.lora_alpha must be positive.")
     if not 0.0 <= cfg.lora_dropout < 1.0:
         raise ValueError("train.lora_dropout must be within [0, 1).")
+    if cfg.compute_dtype not in {"fp16", "bf16"}:
+        raise ValueError(f"train.compute_dtype must be 'fp16'/'bf16', got {cfg.compute_dtype!r}.")
+    if not 0.0 <= cfg.warmup_ratio < 1.0:
+        raise ValueError("train.warmup_ratio must be within [0, 1).")
     if cfg.epochs <= 0:
         raise ValueError("train.epochs must be positive.")
     if cfg.learning_rate <= 0:
