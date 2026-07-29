@@ -73,6 +73,84 @@ def test_split_shots_eval_excludes_shots():
     assert {r["offer_id"] for r in eval_recs} == {"t2", "e0"}
 
 
+# -- propose: resumable / incremental caching ------------------------------------------------------
+
+def _write_jsonl(path, rows):
+    import json
+
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
+def _seed_propose(monkeypatch, tmp_path):
+    """Point propose() at a tmp frozen set + proposals file and record which ids it recomputes."""
+    from pl_jobs_lora.dataset import labeling_qa as lq
+
+    cfg = load_config()
+    n_shots = cfg.probe.few_shot_examples
+    train = [_record(f"t{i}") for i in range(n_shots + 3)]
+    test = [_record("e0"), _record("e1")]
+    processed = tmp_path / "processed"
+    processed.mkdir()
+    _write_jsonl(processed / "train.jsonl", train)
+    _write_jsonl(processed / "test.jsonl", test)
+    monkeypatch.setattr(lq, "_PROPOSALS", tmp_path / "proposals.jsonl")
+
+    asked: list[list[str]] = []
+
+    def fake_run_inference(cand, mode, eval_set, shots, cfg_, on_prediction=None):
+        asked.append([ex.offer_id for ex in eval_set])
+        preds = []
+        for ex in eval_set:
+            pred = {"offer_id": ex.offer_id, "valid": True, "parsed": {"title": ex.offer_id},
+                    "latency_s": 0.0, "output_tokens": 1}
+            if on_prediction is not None:
+                on_prediction(pred)
+            preds.append(pred)
+        return preds
+
+    monkeypatch.setattr("pl_jobs_lora.probe.run_inference", fake_run_inference)
+    eval_ids = [r["offer_id"] for r in train[n_shots:] + test]
+    return lq, cfg, processed, eval_ids, asked
+
+
+def test_propose_skips_cached_and_appends_only_todo(monkeypatch, tmp_path):
+    lq, cfg, processed, eval_ids, asked = _seed_propose(monkeypatch, tmp_path)
+    already = eval_ids[:2]
+    _write_jsonl(lq._PROPOSALS, [{"offer_id": i, "valid": True, "parsed": {}} for i in already])
+
+    out = lq.propose(cfg, processed_dir=processed)
+
+    assert asked == [eval_ids[2:]]                          # only the uncached ids were recomputed
+    assert [r["offer_id"] for r in out] == eval_ids          # returned in deterministic eval order
+    on_disk = [r["offer_id"] for r in lq._load_cached_proposals().values()]
+    assert set(on_disk) == set(eval_ids)                     # cache is the union, nothing dropped
+
+
+def test_propose_resumes_to_a_noop_when_complete(monkeypatch, tmp_path):
+    lq, cfg, processed, eval_ids, asked = _seed_propose(monkeypatch, tmp_path)
+    lq.propose(cfg, processed_dir=processed)                 # first pass computes everything
+    asked.clear()
+
+    out = lq.propose(cfg, processed_dir=processed)           # second pass: fully cached
+
+    assert asked == []                                       # the model is never invoked again
+    assert [r["offer_id"] for r in out] == eval_ids
+
+
+def test_propose_tolerates_torn_trailing_line(monkeypatch, tmp_path):
+    import json
+
+    lq, cfg, processed, eval_ids, asked = _seed_propose(monkeypatch, tmp_path)
+    good = json.dumps({"offer_id": eval_ids[0], "valid": True, "parsed": {}})
+    torn = '{"offer_id": "' + eval_ids[1] + '", "par'    # half-written line from a crashed run
+    lq._PROPOSALS.write_text(good + "\n" + torn, encoding="utf-8")
+
+    lq.propose(cfg, processed_dir=processed)
+
+    assert eval_ids[0] not in asked[0]                   # the intact record is kept
+    assert eval_ids[1] in asked[0]                       # the torn one is recomputed
+
+
 # -- legs ------------------------------------------------------------------------------------------
 
 def test_to_dev_examples_roundtrip():

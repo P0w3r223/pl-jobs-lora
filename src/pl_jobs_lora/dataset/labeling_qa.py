@@ -131,8 +131,30 @@ def split_shots_eval(
     return train[:n_shots], train[n_shots:] + test
 
 
+def _load_cached_proposals() -> dict[str, dict]:
+    """Existing proposals keyed by offer_id; tolerate a torn trailing line from a crashed run."""
+    if not _PROPOSALS.exists():
+        return {}
+    cache: dict[str, dict] = {}
+    for line in _PROPOSALS.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # half-written final line from an interrupted run → recomputed as todo below
+        cache[rec["offer_id"]] = rec
+    return cache
+
+
 def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) -> list[dict]:
-    """Run the proposer over the frozen set (prose-only) and cache proposals; needs gguf."""
+    """Run the proposer over the frozen set (prose-only) and cache proposals; needs gguf.
+
+    Resumable: each prediction is appended to ``proposals.jsonl`` and cached by offer_id as it is
+    produced, so an interrupted CPU run continues where it stopped instead of restarting from zero.
+    To force a fresh recompute (e.g. after changing the proposer), delete ``proposals.jsonl`` first.
+    """
     from pl_jobs_lora import probe  # local: probe.run_inference lazily imports llama-cpp
 
     train = _read_jsonl(processed_dir / "train.jsonl")
@@ -140,12 +162,25 @@ def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) ->
     shots_recs, eval_recs = split_shots_eval(train, test, cfg.probe.few_shot_examples)
     if limit:
         eval_recs = eval_recs[:limit]
-    preds = probe.run_inference(
-        _proposer_candidate(cfg), cfg.labeling_qa.proposer_mode,
-        to_dev_examples(eval_recs), to_dev_examples(shots_recs), cfg,
-    )
-    _write_jsonl(_PROPOSALS, preds)
-    return preds
+
+    cached = _load_cached_proposals()
+    eval_ids = [r["offer_id"] for r in eval_recs]
+    todo = [r for r in eval_recs if r["offer_id"] not in cached]
+
+    if todo:
+        _PROPOSALS.parent.mkdir(parents=True, exist_ok=True)
+        with _PROPOSALS.open("a", encoding="utf-8") as fh:
+            def _sink(pred: dict) -> None:
+                fh.write(json.dumps(pred, ensure_ascii=False) + "\n")
+                fh.flush()
+                cached[pred["offer_id"]] = pred
+
+            probe.run_inference(
+                _proposer_candidate(cfg), cfg.labeling_qa.proposer_mode,
+                to_dev_examples(todo), to_dev_examples(shots_recs), cfg,
+                on_prediction=_sink,
+            )
+    return [cached[i] for i in eval_ids]
 
 
 # -- sample: seeded, disagreement-stratified draw for human adjudication ---------------------------

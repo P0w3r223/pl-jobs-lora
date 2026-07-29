@@ -14,6 +14,7 @@ import argparse
 import json
 import statistics
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
@@ -56,8 +57,14 @@ def _gguf_path(cand: ModelCandidate) -> Path:
 def run_inference(
     cand: ModelCandidate, mode: str, eval_set: list[DevExample],
     shots: list[DevExample], cfg: Config,
+    on_prediction: Callable[[dict], None] | None = None,
 ) -> list[dict]:
-    """Generate + parse predictions for one (candidate, shot-mode). Requires llama-cpp-python."""
+    """Generate + parse predictions for one (candidate, shot-mode). Requires llama-cpp-python.
+
+    ``on_prediction`` is invoked with each prediction as it is produced (before it is appended
+    to the return list) so a long run can be checkpointed to disk record-by-record; when ``None``
+    the behaviour is unchanged.
+    """
     from llama_cpp import Llama
 
     n_shots = cfg.probe.few_shot_examples if mode == "few" else 0
@@ -76,11 +83,14 @@ def run_inference(
         latency = time.perf_counter() - t0
         raw = resp["choices"][0]["message"]["content"] or ""
         parsed, valid = parse_output(raw, alias_index)
-        preds.append({
+        pred = {
             "offer_id": ex.offer_id, "valid": valid, "parsed": parsed,
             "latency_s": round(latency, 3),
             "output_tokens": resp.get("usage", {}).get("completion_tokens", 0),
-        })
+        }
+        if on_prediction is not None:
+            on_prediction(pred)
+        preds.append(pred)
     del llm
     return preds
 
