@@ -153,7 +153,10 @@ def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) ->
 
     Resumable: each prediction is appended to ``proposals.jsonl`` and cached by offer_id as it is
     produced, so an interrupted CPU run continues where it stopped instead of restarting from zero.
-    To force a fresh recompute (e.g. after changing the proposer), delete ``proposals.jsonl`` first.
+    An interrupted run can leave a torn final line; that line is dropped and the record recomputed
+    on the next run, and the file is rewritten clean from the parsed cache before any append so both
+    readers (this module and ``_read_jsonl``) always see valid JSONL. To force a fresh recompute
+    (e.g. after changing the proposer), delete ``proposals.jsonl`` first.
     """
     from pl_jobs_lora import probe  # local: probe.run_inference lazily imports llama-cpp
 
@@ -168,7 +171,10 @@ def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) ->
     todo = [r for r in eval_recs if r["offer_id"] not in cached]
 
     if todo:
-        _PROPOSALS.parent.mkdir(parents=True, exist_ok=True)
+        # Rewrite from the parsed cache before appending: this drops any torn trailing line from an
+        # interrupted run and guarantees a final newline, so the append below can never merge onto a
+        # partial record. A killed process only loses OS-unsynced records, which resume as todo.
+        _write_jsonl(_PROPOSALS, list(cached.values()))
         with _PROPOSALS.open("a", encoding="utf-8") as fh:
             def _sink(pred: dict) -> None:
                 fh.write(json.dumps(pred, ensure_ascii=False) + "\n")

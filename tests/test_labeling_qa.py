@@ -145,10 +145,14 @@ def test_propose_tolerates_torn_trailing_line(monkeypatch, tmp_path):
     torn = '{"offer_id": "' + eval_ids[1] + '", "par'    # half-written line from a crashed run
     lq._PROPOSALS.write_text(good + "\n" + torn, encoding="utf-8")
 
-    lq.propose(cfg, processed_dir=processed)
+    out = lq.propose(cfg, processed_dir=processed)
 
     assert eval_ids[0] not in asked[0]                   # the intact record is kept
     assert eval_ids[1] in asked[0]                       # the torn one is recomputed
+    # the resumed file must stay valid for the downstream (non-tolerant) reader, and be complete
+    on_disk = {r["offer_id"] for r in lq._read_jsonl(lq._PROPOSALS)}
+    assert on_disk == set(eval_ids)                      # torn line healed, nothing dropped
+    assert [r["offer_id"] for r in out] == eval_ids
 
 
 # -- legs ------------------------------------------------------------------------------------------
