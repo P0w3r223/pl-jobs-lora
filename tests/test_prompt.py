@@ -39,3 +39,27 @@ def test_non_json_is_invalid():
 def test_trailing_garbage_after_object_is_tolerated():
     parsed, valid = parse_output('{"title": "X"} <eos> blah', _ALIASES)
     assert valid and parsed["title"] == "X"
+
+
+def test_malformed_salary_currency_type_does_not_crash():
+    raw = json.dumps({"title": "X", "salary": {"currency": ["PLN", "EUR"]}})
+    parsed, valid = parse_output(raw, _ALIASES)
+    assert valid
+    assert parsed["salary"]["currency"] is None
+
+
+def test_scalar_instead_of_list_field_does_not_crash():
+    raw = json.dumps({"title": "X", "seniority": 5, "work_mode": 3.0, "tech_expected": 7})
+    parsed, valid = parse_output(raw, _ALIASES)
+    assert valid
+    assert parsed["seniority"] == []
+    assert parsed["work_mode"] == []
+    assert parsed["tech_expected"] == []
+
+
+def test_string_instead_of_list_field_is_not_split_into_characters():
+    raw = json.dumps({"title": "X", "seniority": "mid", "tech_expected": "react"})
+    parsed, valid = parse_output(raw, _ALIASES)
+    assert valid
+    assert parsed["seniority"] == []
+    assert parsed["tech_expected"] == []

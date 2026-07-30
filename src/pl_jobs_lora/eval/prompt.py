@@ -58,7 +58,7 @@ def _extract_json(raw: str) -> dict | None:
 
 def _norm_set(values, mapper, allowed: tuple[str, ...]) -> list[str]:
     out: list[str] = []
-    for v in values or []:
+    for v in values if isinstance(values, list) else []:
         c = mapper(v if isinstance(v, str) else str(v))
         if c in allowed and c not in out:
             out.append(c)
@@ -78,13 +78,18 @@ def parse_output(raw: str, alias_index: dict[str, str]) -> tuple[dict | None, bo
         obj.get("work_mode"), normalize.normalize_work_mode, vocab.WORK_MODE_CANON
     )
     for f in ("tech_expected", "tech_optional"):
+        values = obj.get(f)
         obj[f] = [
             normalize.normalize_technology(t, alias_index)
-            for t in obj.get(f) or [] if isinstance(t, str) and t.strip()
+            for t in (values if isinstance(values, list) else [])
+            if isinstance(t, str) and t.strip()
         ]
     salary = obj.get("salary")
     if isinstance(salary, dict):
-        salary["currency"] = normalize.normalize_currency(salary.get("currency"))
+        currency = salary.get("currency")
+        salary["currency"] = normalize.normalize_currency(
+            currency if isinstance(currency, str) else None
+        )
 
     try:
         return JobPosting.model_validate(obj).model_dump(), True
