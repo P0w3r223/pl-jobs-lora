@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "n_gold": 142,
+    "n_variants": 2,
+    "salary_rel_tolerance": 0.05,
+    "api_pricing": "claude-haiku-4-5 $1.0/$5.0 per MTok",
+    "note": "API variants priced by tokens x list price; local (base/LoRA) variants ~$0."
+  },
+  "variants": [
+    {
+      "variant": "bielik-1.5b-gguf__few",
+      "scores": {
+        "n": 142,
+        "json_validity": 0.7958,
+        "title_exact": 0.0563,
+        "fields": {
+          "seniority": {
+            "precision": 0.3678,
+            "recall": 0.1905,
+            "f1": 0.251,
+            "exact_match": 0.1268,
+            "n": 142
+          },
+          "work_mode": {
+            "precision": 0.6991,
+            "recall": 0.4365,
+            "f1": 0.5374,
+            "exact_match": 0.4437,
+            "n": 142
+          },
+          "tech_expected": {
+            "precision": 0.129,
+            "recall": 0.1125,
+            "f1": 0.1202,
+            "exact_match": 0.0282,
+            "n": 142
+          },
+          "tech_optional": {
+            "precision": 0.1429,
+            "recall": 0.013,
+            "f1": 0.0238,
+            "exact_match": 0.5986,
+            "n": 142
+          }
+        },
+        "salary": {
+          "currency": 0.7535,
+          "kind": 0.9014,
+          "amount": 0.7535
+        }
+      },
+      "mean_field_f1": 0.2331,
+      "usd_per_1k_postings": null,
+      "latency_s": {
+        "p50": 21.435,
+        "p95": 103.015
+      }
+    },
+    {
+      "variant": "bielik-1.5b-gguf__zero",
+      "scores": {
+        "n": 142,
+        "json_validity": 0.0493,
+        "title_exact": 0.0,
+        "fields": {
+          "seniority": {
+            "precision": 0.1795,
+            "recall": 0.0417,
+            "f1": 0.0676,
+            "exact_match": 0.007,
+            "n": 142
+          },
+          "work_mode": {
+            "precision": 0.2381,
+            "recall": 0.0276,
+            "f1": 0.0495,
+            "exact_match": 0.0,
+            "n": 142
+          },
+          "tech_expected": {
+            "precision": 0.12,
+            "recall": 0.0055,
+            "f1": 0.0106,
+            "exact_match": 0.1831,
+            "n": 142
+          },
+          "tech_optional": {
+            "precision": 0.0312,
+            "recall": 0.0065,
+            "f1": 0.0108,
+            "exact_match": 0.6056,
+            "n": 142
+          }
+        },
+        "salary": {
+          "currency": 0.7465,
+          "kind": 0.8732,
+          "amount": 0.7394
+        }
+      },
+      "mean_field_f1": 0.0346,
+      "usd_per_1k_postings": null,
+      "latency_s": {
+        "p50": 67.899,
+        "p95": 102.575
+      }
+    }
+  ]
+}
