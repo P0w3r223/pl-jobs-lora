@@ -2,7 +2,7 @@
 
 Date: 2026-07-27
 Status: accepted
-Author: P0w3r223 + Claude
+Author: P0w3r223
 Related to: docs/research/f6-data-availability.md
 
 ---
