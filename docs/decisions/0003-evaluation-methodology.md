@@ -158,9 +158,48 @@ point estimate here and the point estimate there cannot disagree on the same fil
 Resampling indices are derived from `random()` rather than `randrange()`: only the former's
 stream is a documented cross-version guarantee, and these intervals are a committed artifact.
 
+## Amendment (2026-08-21) — an F1 that cannot be read without its ceiling
+
+`tech_optional` scored 0.01–0.02 for *every* variant, including the frontier baseline. A metric on
+which the best available model does no better than the worst is usually not measuring the model,
+and three independent checks agree that it was not:
+
+1. The labeling-QA proposer, reading **prose only** across 708 postings, emitted a non-empty
+   `tech_optional` on **27** records — against 575 for `tech_expected`. It was not guessing wrong;
+   it had nothing to guess from.
+2. `claude-haiku-4-5` *does* attempt the field (36 records against a support of 53) and reaches a
+   precision of **0.03**, while scoring 0.29 on `tech_expected` in the same call.
+3. Model-free, on the text itself: only **14–17 %** of gold `tech_optional` terms occur anywhere in
+   their own posting's prose, and **75 %** of the postings carrying gold optional terms contain not
+   one of them. For `tech_expected` the same measurement gives 32–35 % and 36 %.
+
+The cause is a known design decision whose magnitude was never quantified: gold tech labels come
+from theprotocol's technologies widget, and ADR-0002's leakage guard strips that widget from the
+prose so the task is reading rather than copying. The labels the guard makes unanswerable stayed in
+the metric anyway.
+
+**Two changes.** `HEADLINE_FIELDS` drops `tech_optional` from the averaged `field F1` — the field is
+still scored and reported, but is not treated as evidence about a model. And `eval/ceiling.py` adds
+a **model-free data ceiling**: per open-vocabulary field, the share of gold terms present in the
+prose at all, rendered beside the scores. It is a bound, not a target — presence is necessary for
+extraction, not sufficient — and the alias-map fallback makes it conservative, so it reads as a
+floor on the ceiling. Closed-vocabulary fields (`seniority`, `work_mode`) get none: their values are
+expressed in free Polish, so a canonical-token search would measure the vocabulary, not the data.
+
+**What it changes about the results.** On the test set the ceiling for `tech_expected` is **0.28**
+and the best recall achieved is **0.27** — the frontier baseline is at **94 %** of what the input
+makes recoverable. Read without the ceiling, 0.28 F1 looked like a weak model; read with it, the
+remaining headroom on this field is mostly not there to be taken. That reframes what the QLoRA
+fine-tune can be expected to win: `JSON validity` (0.05 zero-shot), `seniority` and `work_mode` are
+genuinely open; `tech_*` is close to a data ceiling no fine-tune can lift.
+
+Headline `field F1` rises for every variant because the dropped field was near zero everywhere —
+`claude-haiku-4-5__few` from 0.39 to 0.51. ADR-0001's probe table was regenerated for the same
+reason; the base-model decision is unchanged (see its second 2026-08-21 amendment).
+
 **Still open.** The bootstrap covers `field F1` and `JSON valid` only, not the per-field or salary
-columns; `tech_optional` still carries equal headline weight at support 53/142; the local side is
-still priced `-`. The taxonomy can only diagnose runs made *after* it existed — the four prediction
+columns; the local side is still priced `-`; and the ceiling is computed for the tech fields only,
+so `seniority`/`work_mode`/`salary` have no comparable answerability bound. The taxonomy can only diagnose runs made *after* it existed — the four prediction
 files on disk report `unrecorded` for all 164 of their invalid rows. And one `decode_max_tokens` is
 applied to every variant when cross-tabbing truncation, which is correct only while
 `probe.max_tokens` and `eval.max_tokens` agree (both 1024); if they ever diverge, the GGUF rows'

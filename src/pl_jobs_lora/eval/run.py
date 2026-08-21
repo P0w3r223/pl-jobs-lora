@@ -13,7 +13,8 @@ from __future__ import annotations
 import argparse
 
 from pl_jobs_lora.config import load_config
-from pl_jobs_lora.eval import baselines, report
+from pl_jobs_lora.eval import baselines, ceiling, report
+from pl_jobs_lora.normalize import load_tech_aliases
 
 
 def main() -> None:
@@ -36,6 +37,11 @@ def main() -> None:
     if args.report:
         gold = report.load_gold()
         files = report.discover_predictions()
+        # Model-free: how much of each open-vocabulary label is in the prose at all. Needs the
+        # frozen records (not the flattened gold) because it reads the model's actual input.
+        ceilings = ceiling.answerable_ceilings(
+            report.load_test_records(), load_tech_aliases(),
+        )
         rep = report.build_report(
             files, gold,
             salary_rel_tolerance=cfg.scoring.salary_rel_tolerance,
@@ -46,6 +52,7 @@ def main() -> None:
             bootstrap_resamples=0 if args.no_bootstrap else cfg.scoring.bootstrap_resamples,
             bootstrap_seed=cfg.scoring.bootstrap_seed,
             bootstrap_ci=cfg.scoring.bootstrap_ci,
+            ceilings=ceilings,
             api_pricing=(
                 f"{cfg.eval.api_model} "
                 f"${cfg.eval.input_usd_per_mtok}/${cfg.eval.output_usd_per_mtok} per MTok"

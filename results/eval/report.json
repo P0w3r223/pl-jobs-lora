@@ -67,7 +67,7 @@
           "support": 35
         }
       },
-      "mean_field_f1": 0.2331,
+      "mean_field_f1": 0.3029,
       "usd_per_1k_postings": null,
       "latency_s": {
         "p50": 21.435,
@@ -135,7 +135,7 @@
           "support": 35
         }
       },
-      "mean_field_f1": 0.0346,
+      "mean_field_f1": 0.0426,
       "usd_per_1k_postings": null,
       "latency_s": {
         "p50": 67.899,
@@ -203,7 +203,7 @@
           "support": 35
         }
       },
-      "mean_field_f1": 0.3862,
+      "mean_field_f1": 0.507,
       "usd_per_1k_postings": 4.4723,
       "latency_s": {
         "p50": 2.251,
@@ -269,7 +269,7 @@
           "support": 35
         }
       },
-      "mean_field_f1": 0.3268,
+      "mean_field_f1": 0.4323,
       "usd_per_1k_postings": 3.3419,
       "latency_s": {
         "p50": 2.468,
@@ -294,9 +294,9 @@
     "intervals": {
       "bielik-1.5b-gguf__few": {
         "mean_field_f1": {
-          "point": 0.2331,
-          "low": 0.2029,
-          "high": 0.2657
+          "point": 0.3029,
+          "low": 0.2657,
+          "high": 0.3401
         },
         "json_validity": {
           "point": 0.7958,
@@ -306,9 +306,9 @@
       },
       "bielik-1.5b-gguf__zero": {
         "mean_field_f1": {
-          "point": 0.0346,
-          "low": 0.0114,
-          "high": 0.0587
+          "point": 0.0426,
+          "low": 0.012,
+          "high": 0.0726
         },
         "json_validity": {
           "point": 0.0493,
@@ -318,9 +318,9 @@
       },
       "claude-haiku-4-5__few": {
         "mean_field_f1": {
-          "point": 0.3862,
-          "low": 0.3577,
-          "high": 0.413
+          "point": 0.507,
+          "low": 0.4708,
+          "high": 0.5417
         },
         "json_validity": {
           "point": 1.0,
@@ -330,9 +330,9 @@
       },
       "claude-haiku-4-5__zero": {
         "mean_field_f1": {
-          "point": 0.3268,
-          "low": 0.2927,
-          "high": 0.358
+          "point": 0.4323,
+          "low": 0.3872,
+          "high": 0.4742
         },
         "json_validity": {
           "point": 1.0,
@@ -347,9 +347,9 @@
         "reference": "claude-haiku-4-5__few",
         "metric": "mean_field_f1",
         "difference": {
-          "point": -0.1531,
-          "low": -0.1921,
-          "high": -0.1137
+          "point": -0.2041,
+          "low": -0.2527,
+          "high": -0.1553
         },
         "sign_agreement": 1.0,
         "comparable": true,
@@ -373,9 +373,9 @@
         "reference": "claude-haiku-4-5__few",
         "metric": "mean_field_f1",
         "difference": {
-          "point": -0.3516,
-          "low": -0.3859,
-          "high": -0.317
+          "point": -0.4644,
+          "low": -0.5118,
+          "high": -0.4177
         },
         "sign_agreement": 1.0,
         "comparable": true,
@@ -399,9 +399,9 @@
         "reference": "claude-haiku-4-5__few",
         "metric": "mean_field_f1",
         "difference": {
-          "point": -0.0595,
-          "low": -0.0823,
-          "high": -0.0384
+          "point": -0.0747,
+          "low": -0.1023,
+          "high": -0.0495
         },
         "sign_agreement": 1.0,
         "comparable": true,
@@ -421,5 +421,25 @@
         "separated": false
       }
     ]
+  },
+  "ceilings": {
+    "tech_expected": {
+      "field": "tech_expected",
+      "terms": 542,
+      "present": 153,
+      "records_with_gold": 115,
+      "records_unanswerable": 41,
+      "share": 0.2823,
+      "unanswerable_share": 0.3565
+    },
+    "tech_optional": {
+      "field": "tech_optional",
+      "terms": 154,
+      "present": 20,
+      "records_with_gold": 53,
+      "records_unanswerable": 40,
+      "share": 0.1299,
+      "unanswerable_share": 0.7547
+    }
   }
 }

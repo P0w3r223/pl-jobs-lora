@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from pl_jobs_lora.eval.scoring import score_predictions
+import pytest
+
+from pl_jobs_lora.eval.scoring import (
+    HEADLINE_FIELDS,
+    SET_FIELDS,
+    mean_measured_f1,
+    score_predictions,
+)
 
 _GOLD = [{
     "offer_id": "a",
@@ -103,6 +110,29 @@ def test_predicting_nothing_does_not_earn_exact_match():
     assert f["exact_match"] == 0.0
     assert f["support"] == 1
     assert f["f1"] == 0.0
+
+
+def test_headline_excludes_tech_optional_but_still_scores_it():
+    """Reported because it is in the gold; not in the headline because it is not in the prose.
+
+    Pinned because this moves a published number: dropping a field that scores ~0 for every
+    variant raises every headline. The exclusion must be a stated decision, not a silent one.
+    """
+    assert "tech_optional" in SET_FIELDS, "still scored and reported"
+    assert "tech_optional" not in HEADLINE_FIELDS, "not averaged into the headline"
+
+    fields = {
+        "seniority": {"f1": 0.6}, "work_mode": {"f1": 0.6},
+        "tech_expected": {"f1": 0.3}, "tech_optional": {"f1": 0.0},
+    }
+    assert mean_measured_f1(fields) == pytest.approx(0.5)
+    assert mean_measured_f1(fields, headline_fields=SET_FIELDS) == pytest.approx(0.375)
+
+
+def test_headline_skips_unmeasurable_fields_without_counting_them_as_zero():
+    fields = {"seniority": {"f1": 0.6}, "work_mode": {"f1": None}, "tech_expected": {"f1": 0.4}}
+    assert mean_measured_f1(fields) == pytest.approx(0.5)
+    assert mean_measured_f1({"seniority": {"f1": None}}) is None
 
 
 def test_coverage_exposes_a_partial_run():
