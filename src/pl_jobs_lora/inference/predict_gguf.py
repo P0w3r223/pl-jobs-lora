@@ -49,21 +49,6 @@ def _decoded_under(cap: int):
     return lambda row: row.get("max_tokens") == cap
 
 
-def _superseded_suffix(rows: list[dict]) -> str:
-    """Name a backup after what the rows it holds were measured under.
-
-    ``backup_once`` takes a given suffix only once, so a fixed name would let the second supersede
-    of a file silently discard what the first saved — and these files are the evidence behind the
-    published numbers. Rows name the cap they recorded; rows from before that field existed name
-    the generation they belong to instead, which keeps those two cases from colliding.
-    """
-    caps = sorted({row.get("max_tokens") for row in rows} - {None})
-    if caps:
-        return ".cap" + "-".join(str(c) for c in caps)
-    has_taxonomy = all(all(k in row for k in _CURRENT_ROW_KEYS) for row in rows)
-    return ".uncapped" if has_taxonomy else ".pre-taxonomy"
-
-
 def run_gguf_predictions(
     cfg: Config, *, mode: str = "few", processed_dir: Path = _PROCESSED,
     pred_dir: Path = _PRED_DIR, limit: int = 0, fresh: bool = False,
@@ -100,10 +85,9 @@ def run_gguf_predictions(
     )
     todo = [ex for ex in eval_set if ex.offer_id not in done]
 
-    existing = _existing_rows(path)
-    if todo and len(done) < len(existing):
+    if todo:
         # About to drop rows this run cannot use — keep a copy of what they measured.
-        saved = resume.backup_once(path, _superseded_suffix(existing))
+        saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
         if saved is not None:
             print(f"[predict-gguf] superseded rows saved to {saved.name}")
 
@@ -123,11 +107,6 @@ def run_gguf_predictions(
     if len(preds) == len(eval_set):
         resume.write_jsonl(path, preds)
     return variant, preds
-
-
-def _existing_rows(path: Path) -> list[dict]:
-    """Every parseable row on disk, current-configuration or not — used to detect a supersede."""
-    return list(resume.load_completed(path).values())
 
 
 def _progress_reporter():

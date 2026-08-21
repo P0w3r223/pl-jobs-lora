@@ -202,25 +202,17 @@ def test_a_cap_change_does_not_bury_the_earlier_backup(monkeypatch, tmp_path):
     assert {r["max_tokens"] for r in _rows(capped)} == {cfg.probe.max_tokens}
 
 
-def test_superseded_suffix_names_the_configuration_it_holds():
-    assert pg._superseded_suffix([{"max_tokens": 1024}, {"max_tokens": 1024}]) == ".cap1024"
-    # A file already mixing caps names both, so neither is lost to the other's backup.
-    assert pg._superseded_suffix([{"max_tokens": 512}, {"max_tokens": 1024}]) == ".cap512-1024"
-    assert pg._superseded_suffix([{}]) == ".pre-taxonomy"
-
-
 def test_taxonomy_rows_without_a_cap_do_not_collide_with_the_pre_taxonomy_backup(
     monkeypatch, tmp_path,
 ):
     """The real files hit this: taxonomy-era rows that predate the `max_tokens` field by one commit.
 
     Naming them `.pre-taxonomy` would send them to a backup that already exists, and `backup_once`
-    refuses to overwrite — so the measurement would vanish exactly when it is being superseded.
+    refuses to overwrite — so the measurement would vanish exactly when it is being superseded. The
+    naming rule itself is `resume.superseded_suffix`; what this covers is that the runner hands it
+    the shape it declares, so the two cannot drift apart unnoticed.
     """
     taxonomy = {"failure": None, "raw": "{}"}
-    assert pg._superseded_suffix([{**taxonomy, "offer_id": "a"}]) == ".uncapped"
-    assert pg._superseded_suffix([{**taxonomy}, {"offer_id": "b"}]) == ".pre-taxonomy"
-
     cfg, processed, pred_dir, _ = _seed(monkeypatch, tmp_path)
     path = pred_dir / "base-gguf__few.jsonl"
     _write_jsonl(path, [{"offer_id": f"e{i}", "valid": True, "parsed": {}, **taxonomy}
