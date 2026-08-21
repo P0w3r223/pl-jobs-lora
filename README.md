@@ -10,17 +10,20 @@ labeled with a triangulated QA loop, and every model variant is scored by one sh
 argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
 task at a fraction of the cost — and here is the measurement.*
 
-> Status: **in progress (session 5 of ~5) — pipeline built and partially run.** The extraction
-> contract, vendored normalization, config/tracking layer, and design decisions are built and tested;
-> the base model is **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON
-> dataset is collected, leakage-guarded, and split by publication date**; the **labeling-QA
-> triangulation**, the **S4 evaluation harness**, and the **S5 QLoRA trainer + inference** (Colab GPU,
-> with all pure parts tested locally) are built. **Locally run so far:** the labeling-QA proposer
-> (708/710 postings relabeled from prose) and its human-review queue draw; the untuned base's
-> **local CPU (GGUF) predictions on the full 142-item test set**, both shot modes — those two rows of
-> the table below are real measurements. What remains is compute outside this environment: the paid
-> API baseline, the labeling-QA arbiter + human adjudication, and the QLoRA fine-tune on Colab — see
-> "Pending" under Evaluation and under Labeling QA below.
+> Status: **in progress — baselines measured, fine-tune pending.** The extraction contract, vendored
+> normalization, config/tracking layer, and design decisions are built and tested; the base model is
+> **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON dataset is collected,
+> leakage-guarded, and split by publication date**; the **labeling-QA triangulation**, the **S4
+> evaluation harness**, and the **S5 QLoRA trainer + inference** (Colab GPU, with all pure parts tested
+> locally) are built. **Run so far:** the labeling-QA proposer (708/710 postings relabeled from prose)
+> and its human-review queue draw; the untuned base's **local CPU (GGUF) predictions on the full
+> 142-item test set**; and the **`claude-haiku-4-5` API baseline** — both shot modes each, so **four of
+> the six rows below are real measurements**, reported with bootstrap confidence intervals. What
+> remains is compute outside this environment: the labeling-QA arbiter + human adjudication, and the
+> QLoRA fine-tune itself — see "Pending" under Evaluation and under Labeling QA below.
+>
+> One published result was **retracted and corrected** along the way; the correction is written up
+> rather than quietly restated, under "Correction" below.
 
 ## Why it's built this way
 
@@ -76,11 +79,18 @@ over a live dev slice on **local CPU via GGUF**, scored by the pure harness:
 
 .venv/Scripts/python -m pl_jobs_lora.probe --collect   # fetch slice, then probe both models
 .venv/Scripts/python -m pl_jobs_lora.probe             # replay cached slice
+.venv/Scripts/python -m pl_jobs_lora.probe --rescore   # re-score stored predictions (no model)
 ```
 
 GGUFs download on demand; the slice, models, and per-run predictions/reports stay local (gitignored).
 Both candidates use matched **Q8_0** quantization (Bielik ships no q4). Results land in
 `results/probe/`; the decision and numbers are recorded in ADR-0001.
+
+`--rescore` is the probe's counterpart to `eval.run --report`: it re-scores the **stored**
+predictions with the current scorer, offline and without loading a model, so a change to the
+metrics can be propagated to the published probe numbers without re-paying for inference. It was
+added when the scoring correction below invalidated the salary columns of the ADR-0001 table — see
+that ADR's 2026-08-21 amendment.
 
 ### Dataset build (ADR-0002)
 
@@ -151,6 +161,7 @@ variable across variants is the model.
 ```bash
 .venv/Scripts/python -m pl_jobs_lora.eval.run --baselines   # zero-/few-shot over test set (paid, network)
 .venv/Scripts/python -m pl_jobs_lora.eval.run --report      # score every predictions file (offline)
+.venv/Scripts/python -m pl_jobs_lora.eval.run --report --no-bootstrap   # skip the resampling section
 ```
 
 `--baselines` runs the frozen test set through the API and writes
@@ -164,6 +175,12 @@ prose and are **never committed**; only the report is versioned. Egress is hard-
 `eval.request_max_snippets` per run, and the Anthropic client is imported lazily (`api` extra), so the
 core install, tests, and CI stay fully offline. The report answers the headline question: *does a 1.5B
 local LoRA rival a frontier API on this task at a fraction of the cost/latency?*
+
+Beyond the accuracy table, `--report` emits two sections that keep that answer interpretable: a
+**failure taxonomy** (why each invalid prediction was invalid, with truncation separated from
+malformed JSON) and **bootstrap intervals** with paired variant differences, so a gap on 142 records
+is only called real when it survives resampling. Both are pure and offline; both are described under
+Evaluation below and in [ADR-0003](docs/decisions/0003-evaluation-methodology.md).
 
 ### Training — QLoRA fine-tune on Colab (ADR-0006)
 
@@ -196,7 +213,7 @@ masking — are tested on the local CPU `.venv`; the GPU orchestration is exerci
 `inference/predict_gguf.py` optionally times the base on **local CPU via GGUF** for the latency column
 (the adapter is not GGUF-converted). See [ADR-0006](docs/decisions/0006-qlora-training-method.md).
 
-## Evaluation (partial — local rows in, API/Colab rows pending)
+## Evaluation (partial — local + API rows in, Colab rows pending)
 
 Numbers below are the current `results/eval/report.md`, regenerated by `eval.run --report` as each
 variant's predictions land. The two GGUF rows are the **CPU-latency variant of the untuned base**
@@ -204,27 +221,99 @@ variant's predictions land. The two GGUF rows are the **CPU-latency variant of t
 apples-to-apples comparison; the **canonical** base/LoRA rows (HF 4-bit, same weights, adapter
 toggled) drop in from Colab (S5) below.
 
-| variant | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary (cur/kind/amt) | field F1 | $/1k | p50 s | p95 s |
-|---|---|---|---|---|---|---|---|---|---|
-| bielik-1.5b-gguf__few | 0.80 | 0.25 | 0.12 | 0.54 | 0.75/0.90/0.75 | 0.23 | – | 21.4 | 103.0 |
-| bielik-1.5b-gguf__zero | 0.05 | 0.07 | 0.01 | 0.05 | 0.75/0.87/0.74 | 0.03 | – | 67.9 | 102.6 |
-| claude-haiku-4-5__zero | – | – | – | – | – | – | – | – | – |
-| claude-haiku-4-5__few | – | – | – | – | – | – | – | – | – |
-| bielik-1.5b__zero (base, HF 4-bit) | – | – | – | – | – | – | – | – | – |
-| **bielik-1.5b-lora__zero (QLoRA, ours)** | – | – | – | – | – | – | – | – | – |
+| variant | cov | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary detect | salary cur/kind/amt | field F1 | $/1k | p50 s | p95 s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.23 | – | 21.4 | 103.0 |
+| bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.03 | – | 67.9 | 102.6 |
+| claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.33 | 3.34 | 2.5 | 4.7 |
+| claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.39** | 4.47 | 2.3 | 4.1 |
+| bielik-1.5b__zero (base, HF 4-bit) | – | – | – | – | – | – | – | – | – | – | – |
+| **bielik-1.5b-lora__zero (QLoRA, ours)** | – | – | – | – | – | – | – | – | – | – | – |
 
+`cov` is the fraction of the 142-item gold set the variant actually predicted: a run that dies
+part-way now scores only its own subset and says so, instead of rendering as a complete run.
 Metrics normalize both sides through the vendored it-job-radar functions (alias- and
-Polish-quirk-aware), so the comparison is fair rather than penalizing paraphrases. Zero-shot base
-confirms the ADR-0001 probe finding at full scale: the untuned model rambles past the JSON object on
-95% of postings (0.05 valid) — few-shot recovers most of that (0.80 valid) but per-field accuracy
-stays weak (0.23 field F1), which is exactly the gap QLoRA (S5) targets.
+Polish-quirk-aware), so the comparison is fair rather than penalizing paraphrases.
+
+### Correction: the salary numbers published before 2026-08-18 were wrong
+
+The earlier scorer credited `None == None`, and **107 of 142 gold records carry no salary**. A model
+emitting nothing at all therefore inherited that base rate: the previous table reported
+`bielik-1.5b-gguf__zero` at **0.75/0.87/0.74 on salary while producing valid JSON 4.9 % of the
+time**. That number measured the prevalence of missing salaries, not accuracy.
+
+The metric is now split, and both halves are denominated honestly:
+
+- **`salary detect`** — the present/absent decision, over all 142 records. Correctly answering
+  "no salary" is a real answer and is credited here.
+- **`salary cur/kind/amt`** — accuracy over the **35** records whose gold *has* a salary. Predicting
+  nothing earns nothing.
+
+The corrected picture is much worse and much more informative: even the frontier baseline recovers
+the currency on 23 % of the salaries present, the arrangement on 11 %, and the amount bounds on
+**6 %**. Salary extraction is the weakest part of this task by a wide margin, which the old metric
+hid entirely. The same fix applies to set-valued fields — empty-vs-empty no longer counts as an
+exact match, and a field with no support renders `-` rather than a perfect score. Regression tests
+covering both cases are in `tests/test_scoring.py`.
+
+The same defect reached the **base-model probe** (ADR-0001), where it is starker still: that table
+published `bielik-1.5b / zero` at `0.74/0.96/0.74` on salary *while it emitted valid JSON on 0 % of
+the slice*. `results/probe/report.{json,md}` and the ADR table were regenerated from the cached
+slice via the new `probe --rescore` — the winner and the combined criterion are unchanged, one
+clause of the rationale was wrong and is struck. Details in
+[ADR-0001](docs/decisions/0001-base-model-selection.md#amendment-2026-08-21--the-salary-columns-were-measuring-label-sparsity).
+
+Zero-shot base confirms the ADR-0001 probe finding at full scale (0.05 valid vs 0.80 few-shot).
+Per-field accuracy stays weak (0.23 field F1 few-shot), which is the gap QLoRA (S5) targets.
+
+### Why a variant failed, not just how often
+
+`JSON valid` counts failures; it never says what they were. A run at 0.05 validity could be a model
+that emits no JSON at all or one whose JSON the schema rejects — a different diagnosis and a
+different fix. The parser now records a **failure class** per prediction alongside the raw output,
+and the report tabulates them:
+
+| class | meaning |
+|---|---|
+| `empty_output` | the model returned nothing |
+| `no_json_object` | prose only — no `{` anywhere |
+| `json_decode_error` | a `{` that never closes; usually a hit token cap |
+| `schema_invalid` | an object the `JobPosting` contract rejects |
+| `unrecorded` | written before the taxonomy existed — reason unrecoverable |
+
+The report cross-tabs `json_decode_error` against the decoding cap, which separates *truncated*
+from *malformed* — the confound the validity rate cannot resolve on its own. **The four prediction
+files currently on disk predate this**, so all 164 of their invalid rows report `unrecorded`: the
+harness can diagnose the next run, not the last one. Re-running the two local GGUF variants would
+backfill them at no cost beyond CPU time (~3.5 h, no API spend); the API rows would have to be
+re-paid.
+
+### How much of the gap is real (n = 142)
+
+A point estimate over 142 records cannot say whether `0.39` beats `0.23` or whether a different
+sample of postings would have reversed it. `--report` now resamples the test set (2000 draws,
+seeded) and reports a 95 % interval per variant, plus **paired** differences against the best
+variant — every variant scored on the *same* drawn records, so the shared difficulty of a draw
+cancels rather than inflating both sides. Two overlapping per-variant CIs can still produce a
+separated paired difference; that is exactly why the comparison is paired and not eyeballed.
+
+On the current four rows every gap survives resampling except one: the two Haiku variants are
+identical on JSON validity (both 1.00), and the report says `separated: no` rather than dressing a
+tie as a finding. Few-shot's `+0.06` field F1 over zero-shot **is** separated — a real effect, not
+sampling noise. `--no-bootstrap` skips the section; the resampling dominates the runtime (~8 s).
 
 **Pending (compute run, not code):**
-- `claude-haiku-4-5` baseline — paid API, key outside this environment:
-  `ANTHROPIC_API_KEY=… .venv/Scripts/python -m pl_jobs_lora.eval.run --baselines`
 - QLoRA train + canonical base/LoRA predictions — Colab GPU:
   `notebooks/train_qlora.ipynb` (Step-0 measure `max_seq_len`, train, push adapter, `predict_hf --base --lora`)
-- After either lands: `.venv/Scripts/python -m pl_jobs_lora.eval.run --report` regenerates this table.
+- After that lands: `.venv/Scripts/python -m pl_jobs_lora.eval.run --report` regenerates this table.
+
+**Known gaps in this harness:**
+- `tech_optional` (support 53/142) scores 0.01–0.02 for *every* variant including the frontier
+  model, yet carries equal weight in `field F1`. Whether to drop it, weight by support, or keep it
+  as an explicit hallucination probe is an open decision.
+- The local side is priced `–` rather than as a number, so the cost comparison is rhetorical.
+- The bootstrap covers `field F1` and `JSON valid` only — the per-field and salary columns are
+  still bare point estimates.
 
 ## Data & ethics
 
