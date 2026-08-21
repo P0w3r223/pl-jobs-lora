@@ -115,3 +115,27 @@ def test_report_shapes_and_render():
     assert "LLM ↔ platform" in md and "Triangulation" in md
     for b_name in BUCKETS:
         assert b_name in md
+
+
+def test_render_survives_a_pair_with_no_title():
+    """`title_exact` is None when neither leg carries a title — the renderer must not `round()` it.
+
+    The regression: widening ``title_exact`` to ``float | None`` guarded ``as_dict`` but not the
+    markdown renderer, so any title-less pair raised ``TypeError``. The existing tests all pass
+    ``title="Dev"``, which is exactly why this went unnoticed.
+    """
+    a = [_rec("x", seniority=["mid"])]  # title defaults to "" -> no support
+    r = pairwise(a, [dict(a[0])], salary_rel_tolerance=_TOL)
+    assert r.title_exact is None
+    report = AgreementReport(metadata={}, llm_vs_platform=r)
+    md = report.render_markdown()          # must not raise
+    assert "exact = -" in md
+
+
+def test_unmeasurable_metrics_render_as_dash_never_as_none():
+    """`-` means "unmeasurable here"; a literal `None` in a published table reads as a bug."""
+    a = [_rec("x", seniority=["mid"])]     # no tech, no salary, no title on either leg
+    pair = pairwise(a, [dict(a[0])], salary_rel_tolerance=_TOL)
+    md = AgreementReport(metadata={}, llm_vs_platform=pair).render_markdown()
+    assert "None" not in md
+    assert "salary (detect; cur/kind/amt)" in md

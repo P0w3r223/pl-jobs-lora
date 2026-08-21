@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 
-from pl_jobs_lora.eval.prompt import parse_output
+import pytest
+
+from pl_jobs_lora.eval import scoring
+from pl_jobs_lora.eval.prompt import parse_output, parse_result
 from pl_jobs_lora.normalize import load_tech_aliases
 
 _ALIASES = load_tech_aliases()
@@ -63,3 +66,45 @@ def test_string_instead_of_list_field_is_not_split_into_characters():
     assert valid
     assert parsed["seniority"] == []
     assert parsed["tech_expected"] == []
+
+
+# --- failure taxonomy: `valid` says how often, `failure` says because of what ------------------
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("", scoring.EMPTY_OUTPUT),
+    ("   \n\t ", scoring.EMPTY_OUTPUT),
+    ("I cannot help with that.", scoring.NO_JSON_OBJECT),
+    ('{"title": "X", "seniority": [', scoring.JSON_DECODE_ERROR),   # the truncation shape
+    ('{"title": "X", "made_up_field": 1}', scoring.SCHEMA_INVALID),
+])
+def test_each_failure_class_is_distinguished(raw, expected):
+    result = parse_result(raw, _ALIASES)
+    assert result.valid is False and result.parsed is None
+    assert result.failure == expected
+
+
+def test_an_object_wrapped_in_a_list_still_parses():
+    """Why the taxonomy has no "not an object" class: decoding anchors on the first `{`."""
+    result = parse_result('[{"title": "X"}]', _ALIASES)
+    assert result.valid and result.parsed["title"] == "X"
+
+
+def test_a_valid_parse_records_no_failure():
+    result = parse_result(json.dumps({"title": "X"}), _ALIASES)
+    assert result.valid is True and result.failure is None
+
+
+def test_every_failure_class_is_declared_in_the_taxonomy():
+    """A class the parser can emit but the report does not know would vanish from the table."""
+    emitted = {
+        parse_result(raw, _ALIASES).failure
+        for raw in ("", "prose only", '{"a": ', '{"made_up_field": 1}')
+    }
+    assert emitted <= set(scoring.PARSE_FAILURES)
+
+
+def test_parse_output_tuple_form_still_agrees_with_the_primitive():
+    """The labeling-QA arbiter still consumes the tuple; the two must not drift."""
+    raw = json.dumps({"title": "X", "seniority": ["regular"]})
+    result = parse_result(raw, _ALIASES)
+    assert parse_output(raw, _ALIASES) == (result.parsed, result.valid)

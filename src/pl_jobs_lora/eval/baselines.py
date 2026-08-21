@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pl_jobs_lora.config import Config, load_config
 from pl_jobs_lora.dataset.collect import DevExample
-from pl_jobs_lora.eval.prompt import build_messages, parse_output
+from pl_jobs_lora.eval.prompt import build_messages, parse_result
 from pl_jobs_lora.normalize import load_tech_aliases
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -93,9 +93,10 @@ def run_baseline_inference(
         t0 = time.perf_counter()
         raw, in_tok, out_tok = generate_fn(messages)
         latency = time.perf_counter() - t0
-        parsed, valid = parse_output(raw, alias_index)
+        result = parse_result(raw, alias_index)
         preds.append({
-            "offer_id": ex.offer_id, "valid": valid, "parsed": parsed,
+            "offer_id": ex.offer_id, "valid": result.valid, "parsed": result.parsed,
+            "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
             "input_tokens": in_tok, "output_tokens": out_tok,
         })

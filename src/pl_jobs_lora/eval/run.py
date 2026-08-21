@@ -21,6 +21,10 @@ def main() -> None:
     ap.add_argument("--baselines", action="store_true", help="run the zero-/few-shot API baselines")
     ap.add_argument("--report", action="store_true", help="build the comparison report (offline)")
     ap.add_argument("--limit", type=int, default=0, help="cap test examples for a smoke run")
+    ap.add_argument(
+        "--no-bootstrap", action="store_true",
+        help="skip the uncertainty section (the resampling dominates --report's runtime)",
+    )
     args = ap.parse_args()
 
     cfg = load_config()
@@ -38,6 +42,10 @@ def main() -> None:
             input_usd_per_mtok=cfg.eval.input_usd_per_mtok,
             output_usd_per_mtok=cfg.eval.output_usd_per_mtok,
             latency_percentiles=cfg.eval.latency_percentiles,
+            decode_max_tokens=cfg.eval.max_tokens,
+            bootstrap_resamples=0 if args.no_bootstrap else cfg.scoring.bootstrap_resamples,
+            bootstrap_seed=cfg.scoring.bootstrap_seed,
+            bootstrap_ci=cfg.scoring.bootstrap_ci,
             api_pricing=(
                 f"{cfg.eval.api_model} "
                 f"${cfg.eval.input_usd_per_mtok}/${cfg.eval.output_usd_per_mtok} per MTok"
