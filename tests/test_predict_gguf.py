@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+from dataclasses import replace
 
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.inference import predict_gguf as pg
@@ -52,6 +53,7 @@ def _seed(monkeypatch, tmp_path, *, fail_after=None):
             pred = {
                 "offer_id": ex.offer_id, "valid": True, "parsed": {"title": ex.offer_id},
                 "failure": None, "raw": '{"title": "x"}', "latency_s": 0.1, "output_tokens": 3,
+                "max_tokens": cfg_.probe.max_tokens,   # the real producer stamps the cap it used
             }
             if on_prediction is not None:
                 on_prediction(pred)
@@ -165,6 +167,70 @@ def test_progress_is_reported_against_the_whole_set_not_just_the_todo(monkeypatc
         on_progress=lambda done, total: seen.append((done, total)),
     )
     assert seen == [(3, 4), (4, 4)]
+
+
+def test_rows_decoded_under_another_cap_are_rerun(monkeypatch, tmp_path):
+    """Raising the cap must not leave a file that averages two decoding budgets as one variant."""
+    cfg, processed, pred_dir, asked = _seed(monkeypatch, tmp_path)
+    pg.run_gguf_predictions(cfg, mode="few", processed_dir=processed, pred_dir=pred_dir)
+    path = pred_dir / "base-gguf__few.jsonl"
+    assert {r["max_tokens"] for r in _rows(path)} == {cfg.probe.max_tokens}
+
+    raised = replace(cfg, probe=replace(cfg.probe, max_tokens=cfg.probe.max_tokens * 2))
+    _, _, _, asked = _seed(monkeypatch, tmp_path)
+    pg.run_gguf_predictions(raised, mode="few", processed_dir=processed, pred_dir=pred_dir)
+    assert asked == [["e0", "e1", "e2", "e3"]], "no row measured under the old cap counts as done"
+    assert {r["max_tokens"] for r in _rows(path)} == {raised.probe.max_tokens}
+
+
+def test_a_cap_change_does_not_bury_the_earlier_backup(monkeypatch, tmp_path):
+    """`backup_once` takes a fixed suffix once — a second supersede needs its own name."""
+    cfg, processed, pred_dir, _ = _seed(monkeypatch, tmp_path)
+    path = pred_dir / "base-gguf__few.jsonl"
+    legacy = [{"offer_id": f"e{i}", "valid": True, "parsed": {}, "latency_s": 9.9}
+              for i in range(4)]
+    _write_jsonl(path, legacy)
+    pg.run_gguf_predictions(cfg, mode="few", processed_dir=processed, pred_dir=pred_dir)
+
+    raised = replace(cfg, probe=replace(cfg.probe, max_tokens=cfg.probe.max_tokens * 2))
+    _seed(monkeypatch, tmp_path)
+    pg.run_gguf_predictions(raised, mode="few", processed_dir=processed, pred_dir=pred_dir)
+
+    pre = path.with_suffix(path.suffix + ".pre-taxonomy")
+    capped = path.with_suffix(path.suffix + f".cap{cfg.probe.max_tokens}")
+    assert _rows(pre) == legacy, "the pre-taxonomy measurement survived the second supersede"
+    assert {r["max_tokens"] for r in _rows(capped)} == {cfg.probe.max_tokens}
+
+
+def test_superseded_suffix_names_the_configuration_it_holds():
+    assert pg._superseded_suffix([{"max_tokens": 1024}, {"max_tokens": 1024}]) == ".cap1024"
+    # A file already mixing caps names both, so neither is lost to the other's backup.
+    assert pg._superseded_suffix([{"max_tokens": 512}, {"max_tokens": 1024}]) == ".cap512-1024"
+    assert pg._superseded_suffix([{}]) == ".pre-taxonomy"
+
+
+def test_taxonomy_rows_without_a_cap_do_not_collide_with_the_pre_taxonomy_backup(
+    monkeypatch, tmp_path,
+):
+    """The real files hit this: taxonomy-era rows that predate the `max_tokens` field by one commit.
+
+    Naming them `.pre-taxonomy` would send them to a backup that already exists, and `backup_once`
+    refuses to overwrite — so the measurement would vanish exactly when it is being superseded.
+    """
+    taxonomy = {"failure": None, "raw": "{}"}
+    assert pg._superseded_suffix([{**taxonomy, "offer_id": "a"}]) == ".uncapped"
+    assert pg._superseded_suffix([{**taxonomy}, {"offer_id": "b"}]) == ".pre-taxonomy"
+
+    cfg, processed, pred_dir, _ = _seed(monkeypatch, tmp_path)
+    path = pred_dir / "base-gguf__few.jsonl"
+    _write_jsonl(path, [{"offer_id": f"e{i}", "valid": True, "parsed": {}, **taxonomy}
+                        for i in range(4)])
+    path.with_suffix(path.suffix + ".pre-taxonomy").write_text("older\n", encoding="utf-8")
+
+    pg.run_gguf_predictions(cfg, mode="few", processed_dir=processed, pred_dir=pred_dir)
+    assert len(_rows(path.with_suffix(path.suffix + ".uncapped"))) == 4
+    assert path.with_suffix(path.suffix + ".pre-taxonomy").read_text(
+        encoding="utf-8") == "older\n", "the earlier backup was not overwritten"
 
 
 def test_eta_rate_comes_from_this_run_not_the_resumed_total(monkeypatch):
