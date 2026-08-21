@@ -108,3 +108,34 @@ def backup_once(path: Path, suffix: str) -> Path | None:
         return None
     target.write_bytes(path.read_bytes())
     return target
+
+
+def superseded_suffix(rows: list[dict], *, required_keys: tuple[str, ...] = ()) -> str:
+    """Name a backup after what the rows it holds were measured under.
+
+    :func:`backup_once` takes a given suffix only once, so a fixed name would let the second
+    supersede of a file silently discard what the first saved — and these files are the evidence
+    behind published numbers. Rows name the cap they recorded; rows from before that field existed
+    name the generation they belong to instead, which keeps those two cases from colliding.
+    """
+    caps = sorted({row.get("max_tokens") for row in rows} - {None})
+    if caps:
+        return ".cap" + "-".join(str(c) for c in caps)
+    current_shape = all(all(k in row for k in required_keys) for row in rows)
+    return ".uncapped" if required_keys and current_shape else ".pre-taxonomy"
+
+
+def backup_superseded(
+    path: Path, kept: dict[str, dict], *, required_keys: tuple[str, ...] = (),
+) -> Path | None:
+    """Copy ``path`` aside when this run is about to drop rows it cannot use.
+
+    ``kept`` is what :func:`load_completed` accepted under the current shape and configuration;
+    anything on disk beyond it is about to be recomputed and overwritten. Lives here rather than in
+    each producer because the two of them ran their own copies of this rule and had already drifted
+    apart on which suffix an uncapped row earns.
+    """
+    existing = list(load_completed(path).values())
+    if len(kept) >= len(existing):
+        return None
+    return backup_once(path, superseded_suffix(existing, required_keys=required_keys))

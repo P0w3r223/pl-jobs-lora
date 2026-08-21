@@ -141,11 +141,8 @@ def _run_variant(
     )
     todo = [ex for ex in eval_set if ex.offer_id not in done]
 
-    existing = list(resume.load_completed(path).values())
-    if todo and len(done) < len(existing):
-        caps = sorted({row.get("max_tokens") for row in existing} - {None})
-        suffix = ".cap" + "-".join(str(c) for c in caps) if caps else ".pre-taxonomy"
-        saved = resume.backup_once(path, suffix)
+    if todo:
+        saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
         if saved is not None:
             print(f"[predict-hf] superseded rows saved to {saved.name}", flush=True)
 
