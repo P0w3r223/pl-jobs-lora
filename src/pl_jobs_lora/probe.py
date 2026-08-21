@@ -89,6 +89,9 @@ def run_inference(
             "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
             "output_tokens": resp.get("usage", {}).get("completion_tokens", 0),
+            # The cap this row decoded under, so the report can tell truncation from malformed
+            # output without assuming every variant shared one limit.
+            "max_tokens": cfg.probe.max_tokens,
         }
         if on_prediction is not None:
             on_prediction(pred)
