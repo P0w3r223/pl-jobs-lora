@@ -204,3 +204,50 @@ files on disk report `unrecorded` for all 164 of their invalid rows. And one `de
 applied to every variant when cross-tabbing truncation, which is correct only while
 `probe.max_tokens` and `eval.max_tokens` agree (both 1024); if they ever diverge, the GGUF rows'
 `at token cap` column would be attributed against the wrong cap.
+
+### Amendment — 2026-08-21 (third): the truncation confound, resolved by measurement
+
+The cross-tab above raised a question it could not answer: 13 of the 14 `json_decode_error` rows on
+the few-shot GGUF variant sat at *exactly* the 1024-token cap, so "the model produced broken JSON"
+and "we stopped the model mid-JSON" were the same number. The obvious reading — that the cap was
+starving the run — was reinforced by the zero-shot variant, whose longest *finished* answer reached
+985 tokens, 96 % of the cap.
+
+Both GGUF variants were therefore re-run at **2048** (config carries the reasoning; 2.1× the longest
+completion the model has ever finished, 2.6× the longest the API baseline produced). Doubling the
+budget changed **nothing** on the few-shot variant:
+
+| | cap 1024 | cap 2048 |
+|---|---|---|
+| valid JSON | 113 / 142 | **113 / 142** |
+| rows at cap | 13 | **13 — the same records** |
+| `invalid → valid` | — | **0** |
+| `valid → invalid` | — | **0** |
+
+So these failures are not budget-limited. The model does not terminate, and would not terminate at
+any cap this project can afford to decode. That is a *negative* result worth the CPU: it closes the
+confound instead of leaving every future reader of the `at token cap` column to wonder. (The
+zero-shot variant is being re-measured separately — it is the case where the cap plausibly did
+bind, at 36 % of rows against few-shot's 9 %.)
+
+**Greedy decoding is deterministic, and now measured to be.** All **129** few-shot rows that ended
+on their own under the old cap produced byte-identical output under the new one. This was the
+argument for not re-paying for the API baselines when the cap moved — 0 of their 284 rows ever
+reached 1024, so the cap never bound them — and it is no longer an argument but an observation on
+129 records. It is also what makes the resume predicate safe to reason about: a row is invalidated
+by a cap change only because its *own* cap is part of what it measured, not because the model might
+have drifted.
+
+**Latency carries ~10 % run-to-run drift.** The same 129 byte-identical rows were 1.08–1.14× slower
+in the second run, and the inflation is flat across the whole run rather than concentrated where
+other work was competing for the CPU — so it is ambient, not contamination. The report publishes
+p50/p95 latency as bare points while giving `field F1` a bootstrap interval; a latency gap smaller
+than about 10 % between two variants should be read as a draw, on the same "is this a finding"
+discipline the uncertainty section applies to accuracy.
+
+**Two items retired from "Still open" above.** The taxonomy is no longer confined to runs made after
+it existed — `resume.load_completed(required_keys=...)` re-runs stale rows, which is how both GGUF
+variants were backfilled. And `decode_max_tokens` is no longer applied globally: every writer stamps
+the cap its row decoded under and the cross-tab prefers it, so the probe and eval caps may diverge
+without misattributing truncation. The API rows predate that field and fall back to the config
+value, which still reports them — correctly — as never truncated.
