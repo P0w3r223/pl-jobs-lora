@@ -5,7 +5,7 @@
 
 ``--baselines`` needs ANTHROPIC_API_KEY and the ``api`` extra; ``--report`` is fully offline and
 aggregates whatever ``results/eval/predictions/*.jsonl`` exist (API baselines now, base/LoRA runs
-dropped in from Colab later).
+dropped in from the hosted GPU later).
 """
 
 from __future__ import annotations

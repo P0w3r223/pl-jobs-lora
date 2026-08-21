@@ -90,8 +90,6 @@ def run_gguf_predictions(
         saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
         if saved is not None:
             print(f"[predict-gguf] superseded rows saved to {saved.name}")
-
-    if todo:
         print(f"[predict-gguf] {variant}: {len(done)} cached, {len(todo)} to run")
         with resume.append_sink(path, done) as sink:
             def _sink(pred: dict) -> None:

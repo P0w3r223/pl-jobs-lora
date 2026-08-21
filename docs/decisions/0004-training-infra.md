@@ -49,3 +49,27 @@ config. The frozen dataset is pulled from HF into the gitignored `data/processed
 `dataset.hf_dataset.pull_dataset` (mirror of `push_dataset`), since a fresh Colab clone has no data.
 The adapter is pushed to `hf.adapter_repo` (`P0w3r223/pl-jobs-lora-adapter`, created private on push,
 like the dataset). The hosted MLflow URI + token remain runtime-supplied (env), still deferred.
+
+## Amendment — 2026-08-21: the hosted GPU is Kaggle, not Colab
+
+The ADR said "free Colab/Kaggle" and the notebook implemented Colab. Colab was attempted on
+2026-08-04 and abandoned: the Bielik repo was gated for that account, and kernel restarts wiped the
+gitignored `data/processed/`, so each retry began by re-pulling the dataset. The local machine is
+not an option either — GTX 1050, 4 GB, Pascal — where a 4-bit 1.5B QLoRA run wants roughly 8 GB and
+bitsandbytes is unreliable on that generation. `notebooks/train_qlora.ipynb` now targets **Kaggle**
+(free T4, ~9 h per session, 30 h/week): tokens come from Kaggle Secrets rather than `getpass`, the
+clone lands in `/kaggle/working`, and artefacts are collected from the notebook Output instead of
+`google.colab.files`.
+
+Nothing in the decision moves — the dependency split, the lazy GPU imports, HF Hub for artefacts and
+env-supplied tracking are all platform-independent, which is why the switch cost one notebook and
+zero lines of logic. The docstrings and README that said "Colab" now say **hosted GPU**: the
+constraint they name is the Linux-GPU half of the split, not a vendor, and naming the vendor is what
+let a platform change read as a code change.
+
+Two consequences are Kaggle's alone. A fresh session starts with an empty `/kaggle/working`, so the
+resume in `predict_hf`/`predict_gguf` protects a run within a session but not across two — carrying
+one over means attaching the previous version's output as a dataset. And a T4 x2 accelerator leaves
+`Trainer` seeing two GPUs, which wraps the model in DataParallel while the 4-bit weights sit where
+`device_map` put them; the notebook pins `CUDA_VISIBLE_DEVICES=0` up front, since that failure
+appears minutes into training rather than at load.

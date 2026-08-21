@@ -169,7 +169,7 @@ def load_config(path: Path | None = None) -> Config:
 
 
 def _validate_train(cfg: TrainConfig, candidates: tuple[ModelCandidate, ...]) -> None:
-    """Fail fast on QLoRA knobs (ADR-0006) so a bad config never reaches the Colab trainer."""
+    """Fail fast on QLoRA knobs (ADR-0006) so a bad config never reaches the GPU trainer."""
     if cfg.base not in {c.key for c in candidates}:
         raise ValueError(f"train.base={cfg.base!r} is not a known models.candidates key.")
     if cfg.lora_r <= 0 or cfg.lora_alpha <= 0:
