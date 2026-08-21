@@ -101,9 +101,17 @@ train:
   learning_rate: 0.0002
   lr_scheduler: cosine
   warmup_ratio: 0.05
-  per_device_batch_size: 4
-  grad_accum_steps: 4             # effective batch 16
-  max_seq_len: 2048               # ESTIMATE — re-measure on Colab with the real Bielik tokenizer (~p99)
+  # Effective batch stays 16; the split moved 4x4 -> 1x16 because max_seq_len doubled below and
+  # activation memory scales with batch x seq. UNVERIFIED on the GPU — this is the one value the
+  # notebook's Step 0 still has to confirm, and a larger per_device is worth trying if it fits.
+  per_device_batch_size: 1
+  grad_accum_steps: 16            # effective batch 16
+  # Measured 2026-08-21 over all 568 train records with the real Bielik tokenizer, not estimated
+  # from character counts: prompt+completion runs p50=3259, p95=3851, p99=4193, max=4759 tokens.
+  # The old 2048 would have truncated the prose of *every* example — median posting losing ~37% of
+  # its text before training, on a task whose labels are already only partly present in the prose
+  # (ADR-0003, data ceiling). 4096 covers p99 and truncates 8 records (1.4%) by a short tail.
+  max_seq_len: 4096
   dev_fraction: 0.1               # newest 10% of train -> inner temporal dev (checkpoint selection)
   seed: 20260728
 
