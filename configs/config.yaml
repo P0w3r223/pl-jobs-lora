@@ -37,6 +37,12 @@ collection:
 # Pure scorer knobs (ADR-0003). Salary bounds scored within a tolerance band.
 scoring:
   salary_rel_tolerance: 0.05   # ±5% on amount_from/amount_to
+  # Uncertainty on a 142-record test set: a point estimate alone cannot say whether a gap between
+  # two variants would survive a different sample of postings. Seeded, so the interval is
+  # reproducible; resampling is by record, and every variant sees the same draw (paired).
+  bootstrap_resamples: 2000
+  bootstrap_seed: 20260728     # matches the labeling-QA sampling seed — one reproducibility knob
+  bootstrap_ci: 95.0           # percentile band reported per variant and per paired difference
 
 # S4 evaluation (ADR-0003): zero-/few-shot API baselines + the comparison report. The API
 # baseline uses the SAME prompt as the probe (fairness — only the model differs) and is parsed
