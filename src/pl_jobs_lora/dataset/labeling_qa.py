@@ -20,6 +20,7 @@ import json
 import random
 from pathlib import Path
 
+from pl_jobs_lora import resume
 from pl_jobs_lora.config import Config, ModelCandidate, load_config
 from pl_jobs_lora.dataset import agreement
 from pl_jobs_lora.dataset.agreement import AgreementReport
@@ -57,11 +58,7 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in lines if line.strip()]
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+_write_jsonl = resume.write_jsonl
 
 
 def load_records(processed_dir: Path = _PROCESSED) -> list[dict]:
@@ -133,19 +130,7 @@ def split_shots_eval(
 
 def _load_cached_proposals() -> dict[str, dict]:
     """Existing proposals keyed by offer_id; tolerate a torn trailing line from a crashed run."""
-    if not _PROPOSALS.exists():
-        return {}
-    cache: dict[str, dict] = {}
-    for line in _PROPOSALS.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue  # half-written final line from an interrupted run → recomputed as todo below
-        cache[rec["offer_id"]] = rec
-    return cache
+    return resume.load_completed(_PROPOSALS)
 
 
 def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) -> list[dict]:
@@ -171,20 +156,11 @@ def propose(cfg: Config, *, processed_dir: Path = _PROCESSED, limit: int = 0) ->
     todo = [r for r in eval_recs if r["offer_id"] not in cached]
 
     if todo:
-        # Rewrite from the parsed cache before appending: this drops any torn trailing line from an
-        # interrupted run and guarantees a final newline, so the append below can never merge onto a
-        # partial record. A killed process only loses OS-unsynced records, which resume as todo.
-        _write_jsonl(_PROPOSALS, list(cached.values()))
-        with _PROPOSALS.open("a", encoding="utf-8") as fh:
-            def _sink(pred: dict) -> None:
-                fh.write(json.dumps(pred, ensure_ascii=False) + "\n")
-                fh.flush()
-                cached[pred["offer_id"]] = pred
-
+        with resume.append_sink(_PROPOSALS, cached) as sink:
             probe.run_inference(
                 _proposer_candidate(cfg), cfg.labeling_qa.proposer_mode,
                 to_dev_examples(todo), to_dev_examples(shots_recs), cfg,
-                on_prediction=_sink,
+                on_prediction=sink,
             )
     return [cached[i] for i in eval_ids]
 

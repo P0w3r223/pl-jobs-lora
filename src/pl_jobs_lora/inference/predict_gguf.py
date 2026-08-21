@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
+from pl_jobs_lora import resume
 from pl_jobs_lora.config import Config, load_config
-from pl_jobs_lora.eval.baselines import to_dev_examples, write_predictions
+from pl_jobs_lora.eval.baselines import to_dev_examples
 from pl_jobs_lora.train.qlora import resolve_base
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -29,11 +31,29 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in lines if line.strip()]
 
 
+# A current prediction row carries the failure taxonomy (ADR-0003). Rows without it were written
+# before the taxonomy existed: they are re-run rather than resumed, which is how the taxonomy gets
+# backfilled onto variants that were measured earlier.
+_CURRENT_ROW_KEYS = ("failure", "raw")
+
+
 def run_gguf_predictions(
     cfg: Config, *, mode: str = "few", processed_dir: Path = _PROCESSED,
-    pred_dir: Path = _PRED_DIR, limit: int = 0,
+    pred_dir: Path = _PRED_DIR, limit: int = 0, fresh: bool = False,
+    on_progress=None,
 ) -> tuple[str, list[dict]]:
-    """Time the base GGUF on the test set → ``{base}-gguf__{mode}`` preds. Needs llama-cpp."""
+    """Time the base GGUF on the test set → ``{base}-gguf__{mode}`` preds. Needs llama-cpp.
+
+    **Resumable.** A full pass is ~50 min few-shot and ~2 h 40 min zero-shot on CPU, so the run is
+    interruptible: each prediction is appended as it is produced, and a restart skips whatever is
+    already on disk. Stop it with Ctrl-C and run the same command later to finish.
+
+    Rows written before the failure taxonomy existed do not count as done — they are re-run, which
+    is what backfills `failure`/`raw` onto the variants measured earlier. Because that discards the
+    old rows, the previous file is copied to ``*.jsonl.pre-taxonomy`` first: they are regenerable,
+    but regenerating them costs the hours this path exists to protect. ``fresh=True`` forces every
+    record to be recomputed.
+    """
     from pl_jobs_lora import probe  # local: probe.run_inference lazily imports llama-cpp
 
     base = resolve_base(cfg)
@@ -42,24 +62,80 @@ def run_gguf_predictions(
     # shots + decoding come from the probe config (this reuses probe.run_inference wholesale); it is
     # latency-only, so it need not match eval.few_shot_examples (same value today anyway).
     shots = to_dev_examples(train[: cfg.probe.few_shot_examples])
-    eval_set = to_dev_examples(test[:limit] if limit else test)
+    eval_recs = test[:limit] if limit else test
+    eval_set = to_dev_examples(eval_recs)
 
-    preds = probe.run_inference(base, mode, eval_set, shots, cfg)
     variant = f"{base.key}-gguf__{mode}"
-    write_predictions(variant, preds, pred_dir)
+    path = pred_dir / f"{variant}.jsonl"
+    done = {} if fresh else resume.load_completed(path, required_keys=_CURRENT_ROW_KEYS)
+    todo = [ex for ex in eval_set if ex.offer_id not in done]
+
+    if todo and len(done) < len(_read_existing_ids(path)):
+        # About to drop rows the current schema cannot use — keep a copy of what they measured.
+        saved = resume.backup_once(path, ".pre-taxonomy")
+        if saved is not None:
+            print(f"[predict-gguf] superseded rows saved to {saved.name}")
+
+    if todo:
+        print(f"[predict-gguf] {variant}: {len(done)} cached, {len(todo)} to run")
+        with resume.append_sink(path, done) as sink:
+            def _sink(pred: dict) -> None:
+                sink(pred)
+                if on_progress is not None:
+                    on_progress(len(done), len(eval_set))
+
+            probe.run_inference(base, mode, todo, shots, cfg, on_prediction=_sink)
+
+    # Deterministic file content once complete: the append order of a resumed run is an artefact of
+    # when it was interrupted, not of the data.
+    preds = [done[ex.offer_id] for ex in eval_set if ex.offer_id in done]
+    if len(preds) == len(eval_set):
+        resume.write_jsonl(path, preds)
     return variant, preds
 
 
+def _read_existing_ids(path: Path) -> set[str]:
+    """Every offer_id on disk, current-schema or not — used only to detect a supersede."""
+    return set(resume.load_completed(path))
+
+
+def _progress_reporter():
+    """Print a one-line ETA per record — a multi-hour CPU run must be observable while it runs."""
+    started = time.perf_counter()
+
+    def report(done: int, total: int) -> None:
+        elapsed = time.perf_counter() - started
+        remaining = (elapsed / done) * (total - done) if done else 0.0
+        print(
+            f"[predict-gguf] {done}/{total}  elapsed {elapsed / 60:.1f} min  "
+            f"eta {remaining / 60:.1f} min",
+            flush=True,
+        )
+
+    return report
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CPU-latency GGUF base inference over the test set.")
-    ap.add_argument("--mode", choices=["zero", "few"], default="few", help="shot mode")
+    ap = argparse.ArgumentParser(
+        description="CPU-latency GGUF base inference over the test set (resumable).",
+    )
+    ap.add_argument("--mode", choices=["zero", "few", "both"], default="few", help="shot mode")
     ap.add_argument("--limit", type=int, default=0, help="cap test examples for a smoke run")
+    ap.add_argument(
+        "--fresh", action="store_true",
+        help="recompute every record instead of resuming from the predictions file",
+    )
     args = ap.parse_args()
 
     cfg = load_config()
-    variant, preds = run_gguf_predictions(cfg, mode=args.mode, limit=args.limit)
-    valid = sum(int(p["valid"]) for p in preds)
-    print(f"[predict-gguf] {variant}: {len(preds)} predictions, {valid} valid JSON")
+    modes = ["few", "zero"] if args.mode == "both" else [args.mode]
+    for mode in modes:
+        variant, preds = run_gguf_predictions(
+            cfg, mode=mode, limit=args.limit, fresh=args.fresh,
+            on_progress=_progress_reporter(),
+        )
+        valid = sum(int(p["valid"]) for p in preds)
+        print(f"[predict-gguf] {variant}: {len(preds)} predictions, {valid} valid JSON")
 
 
 if __name__ == "__main__":
