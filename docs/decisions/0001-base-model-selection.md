@@ -33,17 +33,21 @@ Probe run on local CPU, 25-offer live dev slice (2 few-shot exemplars, **n=23** 
 matched **Q8_0** for both candidates, pure ADR-0003 scorer. Winner by
 (mean field F1 + JSON-validity), tie-break lower p50 latency:
 
-| variant | field F1 | JSON valid | salary cur/kind/amt | p50 s | out tok |
-|---|---|---|---|---|---|
-| qwen2.5-1.5b / zero | 0.224 | 0.96 | 0.26 / 0.17 / 0.22 | 31.7 | 417 |
-| qwen2.5-1.5b / few | 0.322 | 0.87 | 0.74 / 0.91 / 0.70 | 15.8 | 233 |
-| bielik-1.5b / zero | 0.000 | 0.00 | 0.74 / 0.96 / 0.74 | 65.2 | 770 |
-| **bielik-1.5b / few** | 0.316 | **0.91** | 0.74 / 0.96 / 0.74 | 23.5 | 203 |
+Salary columns **corrected 2026-08-21** — see the amendment below; the table as published on
+2026-07-27 credited a model for saying nothing.
+
+| variant | field F1 | JSON valid | salary detect | salary cur/kind/amt | p50 s | out tok |
+|---|---|---|---|---|---|---|
+| qwen2.5-1.5b / zero | 0.224 | 0.96 | 0.26 | 0.67 / 0.00 / 0.00 | 31.7 | 417 |
+| qwen2.5-1.5b / few | 0.322 | 0.87 | 0.70 | 0.17 / 0.00 / 0.00 | 15.8 | 233 |
+| bielik-1.5b / zero | 0.000 | 0.00 | 0.00 | 0.00 / 0.00 / 0.00 | 65.2 | 770 |
+| **bielik-1.5b / few** | 0.316 | **0.91** | 0.70 | 0.00 / 0.00 / 0.00 | 23.5 | 203 |
 
 **Chosen base: Bielik-1.5B-v3.0-Instruct**, run few-shot. Rationale:
 
 - Combined criterion: bielik/few 1.229 > qwen/few 1.192 — Bielik trades ~0.006 field F1 for
-  +0.04 JSON-validity and higher salary/kind accuracy.
+  +0.04 JSON-validity. (The original wording added "and higher salary/kind accuracy"; under the
+  corrected metric that clause is false and has been struck — see the amendment.)
 - **Zero-shot Bielik never emits valid JSON** (0.00) and rambles (770 tok, 65 s) — a real finding:
   it needs few-shot steering, which QLoRA supersedes. This is the *starting point* being measured,
   not a quality verdict.
@@ -63,3 +67,30 @@ matched **Q8_0** for both candidates, pure ADR-0003 scorer. Winner by
   compiler) — README documents the index.
 - License confirmed usable for both (Apache-2.0 Qwen; Bielik SpeakLeash/Apache-2.0). Probe was
   conclusive — no external-evidence researcher needed.
+
+## Amendment (2026-08-21) — the salary columns were measuring label sparsity
+
+The scoring defect described in [ADR-0003's amendment](0003-evaluation-methodology.md) applies to
+this table too, and the probe slice shows it in its purest form: **`bielik-1.5b / zero` was
+published at `0.74 / 0.96 / 0.74` on salary while emitting valid JSON on 0 % of the slice.** The old
+scorer credited `None == None`, only 6 of the 23 eval records carry a salary, and a model producing
+nothing at all inherited the other 17.
+
+The numbers above were regenerated from the **cached slice and the stored predictions** — no model
+was re-run and no prediction changed:
+
+```bash
+.venv/Scripts/python -m pl_jobs_lora.probe --rescore   # offline; loads no model
+```
+
+**The decision stands.** `mean_field_f1` and JSON-validity are untouched by the fix, so the
+combined criterion is unchanged (bielik/few 1.229 > qwen/few 1.192) and `pick_winner` still
+returns `bielik-1.5b/few`. What changes is one clause of the rationale: Bielik does **not** have
+higher salary accuracy. On the 6 supported records qwen/few recovers the currency once (0.17) and
+Bielik never does, and *no* variant gets a single `kind` or `amount` right. The honest reading is
+that **salary is unmeasurable at this slice size** — 6 records is too thin to separate two models —
+and it should never have appeared as a discriminator in the rationale.
+
+`--rescore` exists because of this: the published probe numbers must be reproducible from the
+cached slice whenever the scorer changes, without re-paying for inference. It is the probe's
+counterpart to `eval.run --report`.

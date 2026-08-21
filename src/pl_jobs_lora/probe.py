@@ -21,7 +21,8 @@ from pathlib import Path
 from pl_jobs_lora.config import Config, ModelCandidate, load_config
 from pl_jobs_lora.dataset.collect import DevExample, collect_dev_slice
 from pl_jobs_lora.eval import scoring
-from pl_jobs_lora.eval.prompt import build_messages, parse_output
+from pl_jobs_lora.eval.prompt import build_messages, parse_result
+from pl_jobs_lora.eval.scoring import fmt_metric
 from pl_jobs_lora.normalize import load_tech_aliases
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -82,9 +83,10 @@ def run_inference(
         )
         latency = time.perf_counter() - t0
         raw = resp["choices"][0]["message"]["content"] or ""
-        parsed, valid = parse_output(raw, alias_index)
+        result = parse_result(raw, alias_index)
         pred = {
-            "offer_id": ex.offer_id, "valid": valid, "parsed": parsed,
+            "offer_id": ex.offer_id, "valid": result.valid, "parsed": result.parsed,
+            "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
             "output_tokens": resp.get("usage", {}).get("completion_tokens", 0),
         }
@@ -103,6 +105,15 @@ def write_predictions(cand_key: str, mode: str, preds: list[dict]) -> None:
             fh.write(json.dumps(p, ensure_ascii=False) + "\n")
 
 
+def read_predictions(cand_key: str, mode: str, pred_dir: Path = _PRED_DIR) -> list[dict] | None:
+    """Stored predictions for one variant, or None when that variant was never run."""
+    path = pred_dir / f"{cand_key}__{mode}.jsonl"
+    if not path.exists():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
 def build_variant_report(preds: list[dict], gold: list[dict], cfg: Config) -> dict:
     """Pure: fold the ADR-0003 scores plus latency/token economy into one variant summary."""
     report = scoring.score_predictions(
@@ -112,9 +123,8 @@ def build_variant_report(preds: list[dict], gold: list[dict], cfg: Config) -> di
     tokens = [p["output_tokens"] for p in preds if p.get("output_tokens")]
     report["latency_p50_s"] = round(statistics.median(latencies), 3) if latencies else None
     report["mean_output_tokens"] = round(statistics.mean(tokens), 1) if tokens else None
-    report["mean_field_f1"] = round(
-        statistics.mean(f["f1"] for f in report["fields"].values()), 4
-    )
+    mean_f1 = scoring.mean_measured_f1(report["fields"])
+    report["mean_field_f1"] = None if mean_f1 is None else round(mean_f1, 4)
     return report
 
 
@@ -122,33 +132,62 @@ def pick_winner(reports: dict[str, dict]) -> str:
     """Rank by (mean field F1 + JSON validity), tie-break lower p50 latency."""
     def key(item):
         _, r = item
-        return (r["mean_field_f1"] + r["json_validity"], -(r["latency_p50_s"] or 0))
+        return (
+            (r["mean_field_f1"] or 0.0) + r["json_validity"],
+            -(r["latency_p50_s"] or 0),
+        )
 
     return max(reports.items(), key=key)[0]
 
 
 def render_table(reports: dict[str, dict]) -> str:
-    head = "| variant | field F1 | JSON valid | title | salary(cur/kind/amt) | p50 s | out tok |"
-    sep = "|---|---|---|---|---|---|---|"
+    head = (
+        "| variant | field F1 | JSON valid | title | salary detect | "
+        "salary cur/kind/amt | p50 s | out tok |"
+    )
+    sep = "|---|---|---|---|---|---|---|---|"
     lines = [head, sep]
     for name, r in reports.items():
         s = r["salary"]
         lines.append(
-            f"| {name} | {r['mean_field_f1']:.3f} | {r['json_validity']:.2f} | "
-            f"{r['title_exact']:.2f} | {s['currency']:.2f}/{s['kind']:.2f}/{s['amount']:.2f} | "
-            f"{r['latency_p50_s']} | {r['mean_output_tokens']} |"
+            f"| {name} | {fmt_metric(r['mean_field_f1'], 3)} | {r['json_validity']:.2f} | "
+            f"{fmt_metric(r['title_exact'])} | {fmt_metric(s['detection'])} | "
+            f"{fmt_metric(s['currency'])}/{fmt_metric(s['kind'])}/{fmt_metric(s['amount'])} | "
+            f"{fmt_metric(r['latency_p50_s'], 1)} | {fmt_metric(r['mean_output_tokens'], 0)} |"
         )
     return "\n".join(lines)
+
+
+def _eval_split(
+    cfg: Config, examples: list[DevExample], limit: int = 0,
+) -> tuple[list[DevExample], list[DevExample], list[dict]]:
+    """(few-shot exemplars, eval examples, gold) — the one place the split is defined."""
+    shots = examples[: cfg.probe.few_shot_examples]
+    eval_set = examples[cfg.probe.few_shot_examples :]
+    if limit:
+        eval_set = eval_set[:limit]
+    return shots, eval_set, [{"offer_id": e.offer_id, **e.gold} for e in eval_set]
+
+
+def write_probe_report(reports: dict[str, dict], n_eval: int, out_dir: Path = _RESULTS) -> dict:
+    winner = pick_winner(reports)
+    out = {"n_eval": n_eval, "winner": winner, "variants": reports}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out_dir / "report.md").write_text(
+        f"# Base-model probe\n\nWinner: **{winner}** (n={n_eval})\n\n"
+        + render_table(reports) + "\n",
+        encoding="utf-8",
+    )
+    return out
 
 
 def run_probe(
     cfg: Config, examples: list[DevExample], candidate_keys: list[str] | None, limit: int = 0,
 ) -> dict:
-    shots = examples[: cfg.probe.few_shot_examples]
-    eval_set = examples[cfg.probe.few_shot_examples :]
-    if limit:
-        eval_set = eval_set[:limit]
-    gold = [{"offer_id": e.offer_id, **e.gold} for e in eval_set]
+    shots, eval_set, gold = _eval_split(cfg, examples, limit)
     candidates = [c for c in cfg.models if not candidate_keys or c.key in candidate_keys]
 
     reports: dict[str, dict] = {}
@@ -158,18 +197,34 @@ def run_probe(
             write_predictions(cand.key, mode, preds)
             reports[f"{cand.key}/{mode}"] = build_variant_report(preds, gold, cfg)
 
-    winner = pick_winner(reports)
-    out = {"n_eval": len(eval_set), "winner": winner, "variants": reports}
-    _RESULTS.mkdir(parents=True, exist_ok=True)
-    (_RESULTS / "report.json").write_text(
-        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (_RESULTS / "report.md").write_text(
-        f"# Base-model probe\n\nWinner: **{winner}** (n={len(eval_set)})\n\n"
-        + render_table(reports) + "\n",
-        encoding="utf-8",
-    )
-    return out
+    return write_probe_report(reports, len(eval_set))
+
+
+def rescore_probe(
+    cfg: Config, examples: list[DevExample], candidate_keys: list[str] | None = None,
+) -> dict:
+    """Re-score the *stored* predictions with the current scorer — loads no model, hits no network.
+
+    The mirror of ``eval.run --report``: when the scorer changes, the published probe numbers must
+    be reproducible from the cached slice without re-paying for inference. Variants whose
+    prediction file is missing are skipped; a file that covers only part of the eval set shows up
+    as ``coverage < 1`` rather than being silently scored as a complete run.
+    """
+    _, eval_set, gold = _eval_split(cfg, examples)
+    candidates = [c for c in cfg.models if not candidate_keys or c.key in candidate_keys]
+
+    reports: dict[str, dict] = {}
+    for cand in candidates:
+        for mode in cfg.probe.shot_modes:
+            preds = read_predictions(cand.key, mode)
+            if preds is None:
+                print(f"[probe] no stored predictions for {cand.key}/{mode} — skipped")
+                continue
+            reports[f"{cand.key}/{mode}"] = build_variant_report(preds, gold, cfg)
+
+    if not reports:
+        raise SystemExit("[probe] no stored predictions found — run the probe first")
+    return write_probe_report(reports, len(eval_set))
 
 
 def main() -> None:
@@ -177,7 +232,14 @@ def main() -> None:
     ap.add_argument("--collect", action="store_true", help="fetch fresh slice (else replay cache)")
     ap.add_argument("--candidates", nargs="*", help="subset of candidate keys to probe")
     ap.add_argument("--limit", type=int, default=0, help="cap eval examples (smoke run; 0=all)")
+    ap.add_argument(
+        "--rescore", action="store_true",
+        help="re-score stored predictions with the current scorer (offline; loads no model)",
+    )
     args = ap.parse_args()
+
+    if args.rescore and args.collect:
+        raise SystemExit("[probe] --rescore replays stored predictions; --collect makes no sense")
 
     cfg = load_config()
     if args.collect:
@@ -186,7 +248,10 @@ def main() -> None:
     else:
         examples = load_slice()
     print(f"[probe] {len(examples)} examples")
-    out = run_probe(cfg, examples, args.candidates, args.limit)
+    if args.rescore:
+        out = rescore_probe(cfg, examples, args.candidates)
+    else:
+        out = run_probe(cfg, examples, args.candidates, args.limit)
     print(f"[probe] winner: {out['winner']}")
     print(render_table(out["variants"]))
 

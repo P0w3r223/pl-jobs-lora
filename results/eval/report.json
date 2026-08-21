@@ -2,8 +2,11 @@
   "metadata": {
     "n_gold": 142,
     "n_variants": 4,
+    "salary_support": 35,
     "salary_rel_tolerance": 0.05,
     "api_pricing": "claude-haiku-4-5 $1.0/$5.0 per MTok",
+    "incomplete_variants": [],
+    "duplicated_row_variants": {},
     "note": "API variants priced by tokens x list price; local (base/LoRA) variants ~$0."
   },
   "variants": [
@@ -11,42 +14,57 @@
       "variant": "bielik-1.5b-gguf__few",
       "scores": {
         "n": 142,
+        "n_gold": 142,
+        "coverage": 1.0,
+        "n_duplicate_rows": 0,
         "json_validity": 0.7958,
         "title_exact": 0.0563,
+        "title_support": 142,
         "fields": {
           "seniority": {
             "precision": 0.3678,
             "recall": 0.1905,
             "f1": 0.251,
             "exact_match": 0.1268,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 87
           },
           "work_mode": {
             "precision": 0.6991,
             "recall": 0.4365,
             "f1": 0.5374,
             "exact_match": 0.4437,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 113
           },
           "tech_expected": {
             "precision": 0.129,
             "recall": 0.1125,
             "f1": 0.1202,
-            "exact_match": 0.0282,
-            "n": 142
+            "exact_match": 0.0087,
+            "n": 142,
+            "support": 115,
+            "n_pred_nonempty": 113
           },
           "tech_optional": {
             "precision": 0.1429,
             "recall": 0.013,
             "f1": 0.0238,
-            "exact_match": 0.5986,
-            "n": 142
+            "exact_match": 0.0,
+            "n": 142,
+            "support": 53,
+            "n_pred_nonempty": 6
           }
         },
         "salary": {
-          "currency": 0.7535,
-          "kind": 0.9014,
-          "amount": 0.7535
+          "detection": 0.6056,
+          "currency": 0.0,
+          "kind": 0.0,
+          "amount": 0.0,
+          "n": 142,
+          "support": 35
         }
       },
       "mean_field_f1": 0.2331,
@@ -54,48 +72,67 @@
       "latency_s": {
         "p50": 21.435,
         "p95": 103.015
-      }
+      },
+      "failures": {
+        "unrecorded": 29
+      },
+      "at_token_cap": 0
     },
     {
       "variant": "bielik-1.5b-gguf__zero",
       "scores": {
         "n": 142,
+        "n_gold": 142,
+        "coverage": 1.0,
+        "n_duplicate_rows": 0,
         "json_validity": 0.0493,
         "title_exact": 0.0,
+        "title_support": 142,
         "fields": {
           "seniority": {
             "precision": 0.1795,
             "recall": 0.0417,
             "f1": 0.0676,
             "exact_match": 0.007,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 6
           },
           "work_mode": {
             "precision": 0.2381,
             "recall": 0.0276,
             "f1": 0.0495,
             "exact_match": 0.0,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 6
           },
           "tech_expected": {
             "precision": 0.12,
             "recall": 0.0055,
             "f1": 0.0106,
-            "exact_match": 0.1831,
-            "n": 142
+            "exact_match": 0.0087,
+            "n": 142,
+            "support": 115,
+            "n_pred_nonempty": 7
           },
           "tech_optional": {
             "precision": 0.0312,
             "recall": 0.0065,
             "f1": 0.0108,
-            "exact_match": 0.6056,
-            "n": 142
+            "exact_match": 0.0,
+            "n": 142,
+            "support": 53,
+            "n_pred_nonempty": 7
           }
         },
         "salary": {
-          "currency": 0.7465,
-          "kind": 0.8732,
-          "amount": 0.7394
+          "detection": 0.0282,
+          "currency": 0.0286,
+          "kind": 0.0,
+          "amount": 0.0,
+          "n": 142,
+          "support": 35
         }
       },
       "mean_field_f1": 0.0346,
@@ -103,48 +140,67 @@
       "latency_s": {
         "p50": 67.899,
         "p95": 102.575
-      }
+      },
+      "failures": {
+        "unrecorded": 135
+      },
+      "at_token_cap": 0
     },
     {
       "variant": "claude-haiku-4-5__few",
       "scores": {
         "n": 142,
+        "n_gold": 142,
+        "coverage": 1.0,
+        "n_duplicate_rows": 0,
         "json_validity": 1.0,
         "title_exact": 0.1197,
+        "title_support": 142,
         "fields": {
           "seniority": {
             "precision": 0.5882,
             "recall": 0.6548,
             "f1": 0.6197,
             "exact_match": 0.4155,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 137
           },
           "work_mode": {
             "precision": 0.7619,
             "recall": 0.5304,
             "f1": 0.6254,
             "exact_match": 0.4155,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 99
           },
           "tech_expected": {
             "precision": 0.2869,
             "recall": 0.2657,
             "f1": 0.2759,
-            "exact_match": 0.0563,
-            "n": 142
+            "exact_match": 0.0261,
+            "n": 142,
+            "support": 115,
+            "n_pred_nonempty": 125
           },
           "tech_optional": {
             "precision": 0.0309,
             "recall": 0.0195,
             "f1": 0.0239,
-            "exact_match": 0.5352,
-            "n": 142
+            "exact_match": 0.0,
+            "n": 142,
+            "support": 53,
+            "n_pred_nonempty": 36
           }
         },
         "salary": {
-          "currency": 0.7887,
-          "kind": 0.8732,
-          "amount": 0.7465
+          "detection": 0.7817,
+          "currency": 0.2286,
+          "kind": 0.1143,
+          "amount": 0.0571,
+          "n": 142,
+          "support": 35
         }
       },
       "mean_field_f1": 0.3862,
@@ -152,48 +208,65 @@
       "latency_s": {
         "p50": 2.251,
         "p95": 4.134
-      }
+      },
+      "failures": {},
+      "at_token_cap": 0
     },
     {
       "variant": "claude-haiku-4-5__zero",
       "scores": {
         "n": 142,
+        "n_gold": 142,
+        "coverage": 1.0,
+        "n_duplicate_rows": 0,
         "json_validity": 1.0,
         "title_exact": 0.1197,
+        "title_support": 142,
         "fields": {
           "seniority": {
             "precision": 0.5391,
             "recall": 0.369,
             "f1": 0.4382,
             "exact_match": 0.2465,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 84
           },
           "work_mode": {
             "precision": 0.7928,
             "recall": 0.4862,
             "f1": 0.6027,
             "exact_match": 0.3873,
-            "n": 142
+            "n": 142,
+            "support": 142,
+            "n_pred_nonempty": 89
           },
           "tech_expected": {
             "precision": 0.2768,
             "recall": 0.238,
             "f1": 0.256,
-            "exact_match": 0.1408,
-            "n": 142
+            "exact_match": 0.0435,
+            "n": 142,
+            "support": 115,
+            "n_pred_nonempty": 107
           },
           "tech_optional": {
             "precision": 0.0233,
             "recall": 0.0065,
             "f1": 0.0102,
-            "exact_match": 0.5704,
-            "n": 142
+            "exact_match": 0.0,
+            "n": 142,
+            "support": 53,
+            "n_pred_nonempty": 17
           }
         },
         "salary": {
-          "currency": 0.7887,
-          "kind": 0.8662,
-          "amount": 0.7465
+          "detection": 0.7746,
+          "currency": 0.2286,
+          "kind": 0.1143,
+          "amount": 0.0571,
+          "n": 142,
+          "support": 35
         }
       },
       "mean_field_f1": 0.3268,
@@ -201,7 +274,152 @@
       "latency_s": {
         "p50": 2.468,
         "p95": 4.684
-      }
+      },
+      "failures": {},
+      "at_token_cap": 0
     }
-  ]
+  ],
+  "bootstrap": {
+    "n_gold": 142,
+    "resamples": 2000,
+    "seed": 20260728,
+    "ci": 95.0,
+    "reference": "claude-haiku-4-5__few",
+    "coverage": {
+      "bielik-1.5b-gguf__few": 1.0,
+      "bielik-1.5b-gguf__zero": 1.0,
+      "claude-haiku-4-5__few": 1.0,
+      "claude-haiku-4-5__zero": 1.0
+    },
+    "intervals": {
+      "bielik-1.5b-gguf__few": {
+        "mean_field_f1": {
+          "point": 0.2331,
+          "low": 0.2029,
+          "high": 0.2657
+        },
+        "json_validity": {
+          "point": 0.7958,
+          "low": 0.7324,
+          "high": 0.8592
+        }
+      },
+      "bielik-1.5b-gguf__zero": {
+        "mean_field_f1": {
+          "point": 0.0346,
+          "low": 0.0114,
+          "high": 0.0587
+        },
+        "json_validity": {
+          "point": 0.0493,
+          "low": 0.0141,
+          "high": 0.0915
+        }
+      },
+      "claude-haiku-4-5__few": {
+        "mean_field_f1": {
+          "point": 0.3862,
+          "low": 0.3577,
+          "high": 0.413
+        },
+        "json_validity": {
+          "point": 1.0,
+          "low": 1.0,
+          "high": 1.0
+        }
+      },
+      "claude-haiku-4-5__zero": {
+        "mean_field_f1": {
+          "point": 0.3268,
+          "low": 0.2927,
+          "high": 0.358
+        },
+        "json_validity": {
+          "point": 1.0,
+          "low": 1.0,
+          "high": 1.0
+        }
+      }
+    },
+    "paired": [
+      {
+        "variant": "bielik-1.5b-gguf__few",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "mean_field_f1",
+        "difference": {
+          "point": -0.1531,
+          "low": -0.1921,
+          "high": -0.1137
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": true
+      },
+      {
+        "variant": "bielik-1.5b-gguf__few",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "json_validity",
+        "difference": {
+          "point": -0.2042,
+          "low": -0.2676,
+          "high": -0.1408
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": true
+      },
+      {
+        "variant": "bielik-1.5b-gguf__zero",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "mean_field_f1",
+        "difference": {
+          "point": -0.3516,
+          "low": -0.3859,
+          "high": -0.317
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": true
+      },
+      {
+        "variant": "bielik-1.5b-gguf__zero",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "json_validity",
+        "difference": {
+          "point": -0.9507,
+          "low": -0.9859,
+          "high": -0.9085
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": true
+      },
+      {
+        "variant": "claude-haiku-4-5__zero",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "mean_field_f1",
+        "difference": {
+          "point": -0.0595,
+          "low": -0.0823,
+          "high": -0.0384
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": true
+      },
+      {
+        "variant": "claude-haiku-4-5__zero",
+        "reference": "claude-haiku-4-5__few",
+        "metric": "json_validity",
+        "difference": {
+          "point": 0.0,
+          "low": 0.0,
+          "high": 0.0
+        },
+        "sign_agreement": 1.0,
+        "comparable": true,
+        "separated": false
+      }
+    ]
+  }
 }
