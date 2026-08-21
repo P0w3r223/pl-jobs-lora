@@ -13,7 +13,8 @@ from __future__ import annotations
 import argparse
 
 from pl_jobs_lora.config import load_config
-from pl_jobs_lora.eval import baselines, report
+from pl_jobs_lora.eval import baselines, ceiling, report
+from pl_jobs_lora.normalize import load_tech_aliases
 
 
 def main() -> None:
@@ -21,6 +22,10 @@ def main() -> None:
     ap.add_argument("--baselines", action="store_true", help="run the zero-/few-shot API baselines")
     ap.add_argument("--report", action="store_true", help="build the comparison report (offline)")
     ap.add_argument("--limit", type=int, default=0, help="cap test examples for a smoke run")
+    ap.add_argument(
+        "--no-bootstrap", action="store_true",
+        help="skip the uncertainty section (the resampling dominates --report's runtime)",
+    )
     args = ap.parse_args()
 
     cfg = load_config()
@@ -32,12 +37,22 @@ def main() -> None:
     if args.report:
         gold = report.load_gold()
         files = report.discover_predictions()
+        # Model-free: how much of each open-vocabulary label is in the prose at all. Needs the
+        # frozen records (not the flattened gold) because it reads the model's actual input.
+        ceilings = ceiling.answerable_ceilings(
+            report.load_test_records(), load_tech_aliases(),
+        )
         rep = report.build_report(
             files, gold,
             salary_rel_tolerance=cfg.scoring.salary_rel_tolerance,
             input_usd_per_mtok=cfg.eval.input_usd_per_mtok,
             output_usd_per_mtok=cfg.eval.output_usd_per_mtok,
             latency_percentiles=cfg.eval.latency_percentiles,
+            decode_max_tokens=cfg.eval.max_tokens,
+            bootstrap_resamples=0 if args.no_bootstrap else cfg.scoring.bootstrap_resamples,
+            bootstrap_seed=cfg.scoring.bootstrap_seed,
+            bootstrap_ci=cfg.scoring.bootstrap_ci,
+            ceilings=ceilings,
             api_pricing=(
                 f"{cfg.eval.api_model} "
                 f"${cfg.eval.input_usd_per_mtok}/${cfg.eval.output_usd_per_mtok} per MTok"

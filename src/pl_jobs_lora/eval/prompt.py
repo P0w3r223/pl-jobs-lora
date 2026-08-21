@@ -4,17 +4,40 @@ The prompt is identical across variants (ADR-0003 fairness): only the model diff
 extracts the first JSON object from the raw output and normalizes categorical fields through the
 vendored maps *before* schema validation, so ``regular`` -> mid and ``ReactJS`` -> react are
 accepted, while a hallucinated key still fails validation (a JSON-validity signal).
+
+A failed parse also records **why** it failed, using the taxonomy in :mod:`pl_jobs_lora.eval.
+scoring` (``PARSE_FAILURES``). ``valid`` alone answers "how often", never "because of what": a run
+at 0.05 validity is indistinguishable from one that emitted no JSON at all and one that emitted
+JSON the schema rejected — and re-deriving the difference means paying for the run again. The
+classes run from "produced nothing" to "produced the right shape with wrong contents", so their
+distribution reads as a diagnosis.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 from pydantic import ValidationError
 
 from pl_jobs_lora import normalize, vocab
 from pl_jobs_lora.dataset.collect import DevExample
+from pl_jobs_lora.eval.scoring import (
+    EMPTY_OUTPUT,
+    JSON_DECODE_ERROR,
+    NO_JSON_OBJECT,
+    SCHEMA_INVALID,
+)
 from pl_jobs_lora.schema import JobPosting
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    """One parsed prediction: the normalized record, whether it is usable, and why not."""
+
+    parsed: dict | None
+    valid: bool
+    failure: str | None   # None exactly when valid; otherwise one of PARSE_FAILURES
 
 _SYSTEM = (
     "You extract structured data from Polish IT job postings. "
@@ -45,15 +68,26 @@ def build_messages(
     return messages
 
 
-def _extract_json(raw: str) -> dict | None:
+def _extract_json(raw: str) -> tuple[dict | None, str | None]:
+    """First JSON object in ``raw`` -> (object, None), or (None, failure class).
+
+    Decoding is anchored on the first ``{``, so a success is always a dict — an object wrapped in
+    a list still parses, and there is no "decoded something that isn't an object" outcome to
+    report. Trailing text after the object is ignored (models append prose and stop tokens).
+    """
+    if not raw.strip():
+        return None, EMPTY_OUTPUT
     start = raw.find("{")
     if start < 0:
-        return None
+        return None, NO_JSON_OBJECT
     try:
         obj, _ = json.JSONDecoder().raw_decode(raw[start:])
-        return obj if isinstance(obj, dict) else None
-    except json.JSONDecodeError:
-        return None
+    except (json.JSONDecodeError, RecursionError):
+        # RecursionError: deeply nested output blows the decoder's stack. A model can emit that,
+        # and crashing here would abandon a run whose API calls are already paid for — it is one
+        # more way the output is unusable, not an exceptional condition.
+        return None, JSON_DECODE_ERROR
+    return obj, None
 
 
 def _norm_set(values, mapper, allowed: tuple[str, ...]) -> list[str]:
@@ -65,11 +99,11 @@ def _norm_set(values, mapper, allowed: tuple[str, ...]) -> list[str]:
     return out
 
 
-def parse_output(raw: str, alias_index: dict[str, str]) -> tuple[dict | None, bool]:
-    """Raw model text -> (normalized JobPosting dict, valid); unparseable -> (None, False)."""
-    obj = _extract_json(raw)
+def parse_result(raw: str, alias_index: dict[str, str]) -> ParseResult:
+    """Raw model text -> normalized record + validity + failure class (the full parse primitive)."""
+    obj, failure = _extract_json(raw)
     if obj is None:
-        return None, False
+        return ParseResult(parsed=None, valid=False, failure=failure)
 
     obj["seniority"] = _norm_set(
         obj.get("seniority"), normalize.normalize_seniority, vocab.SENIORITY_ORDER
@@ -92,6 +126,17 @@ def parse_output(raw: str, alias_index: dict[str, str]) -> tuple[dict | None, bo
         )
 
     try:
-        return JobPosting.model_validate(obj).model_dump(), True
+        record = JobPosting.model_validate(obj).model_dump()
     except ValidationError:
-        return None, False
+        return ParseResult(parsed=None, valid=False, failure=SCHEMA_INVALID)
+    return ParseResult(parsed=record, valid=True, failure=None)
+
+
+def parse_output(raw: str, alias_index: dict[str, str]) -> tuple[dict | None, bool]:
+    """Raw model text -> (normalized JobPosting dict, valid); unparseable -> (None, False).
+
+    The tuple form kept for callers that only decide usability (the labeling-QA arbiter). Anything
+    writing a predictions file should use :func:`parse_result` and persist ``failure`` too.
+    """
+    result = parse_result(raw, alias_index)
+    return result.parsed, result.valid

@@ -19,7 +19,12 @@ from collections import Counter
 from collections.abc import Hashable
 from dataclasses import dataclass, field
 
-from pl_jobs_lora.eval.scoring import SET_FIELDS, _score_salary, score_predictions
+from pl_jobs_lora.eval.scoring import (
+    SET_FIELDS,
+    fmt_metric,
+    salary_equal,
+    score_predictions,
+)
 
 # Categorical fields whose agreement is chance-corrected with Cohen's kappa. The tech fields are an
 # open vocabulary — kappa-as-single-category is uninformative there — so only these two get it.
@@ -47,8 +52,7 @@ def _canon(field_name: str, value) -> Hashable:
 def _field_equal(field_name: str, a, b, *, salary_rel_tolerance: float) -> bool:
     """Field-level equality, reusing the scorer's salary tolerance so it matches ADR-0003."""
     if field_name == "salary":
-        s = _score_salary(a, b, salary_rel_tolerance)
-        return s["currency"] == 1 and s["kind"] == 1 and s["amount"] == 1
+        return salary_equal(a, b, salary_rel_tolerance)
     if field_name == "title":
         return (a or "").strip().lower() == (b or "").strip().lower()
     return frozenset(a or []) == frozenset(b or [])
@@ -115,7 +119,7 @@ class PairwiseReport:
     n: int
     json_validity: float
     title_agreement: float
-    title_exact: float
+    title_exact: float | None      # None when no record on this pair carries a gold title
     per_field: dict = field(default_factory=dict)
     salary: dict = field(default_factory=dict)
 
@@ -124,7 +128,7 @@ class PairwiseReport:
             "n": self.n,
             "json_validity": round(self.json_validity, 4),
             "title_agreement": round(self.title_agreement, 4),
-            "title_exact": round(self.title_exact, 4),
+            "title_exact": None if self.title_exact is None else round(self.title_exact, 4),
             "per_field": self.per_field,
             "salary": self.salary,
         }
@@ -240,19 +244,23 @@ class AgreementReport:
 def _pairwise_md(r: PairwiseReport) -> str:
     rows = [
         f"- n = {r.n}, JSON-validity = {round(r.json_validity, 4)}, "
-        f"title agreement = {round(r.title_agreement, 4)} (exact = {round(r.title_exact, 4)})",
+        f"title agreement = {round(r.title_agreement, 4)} "
+        f"(exact = {fmt_metric(r.title_exact, 4)})",
         "",
         "| field | agreement | F1 | exact | kappa |",
         "|---|---|---|---|---|",
     ]
     for f, m in r.per_field.items():
         rows.append(
-            f"| {f} | {m['agreement']} | {m['f1']} | {m['exact_match']} | {m.get('kappa', 'n/a')} |"
+            f"| {f} | {fmt_metric(m['agreement'], 4)} | {fmt_metric(m['f1'], 4)} | "
+            f"{fmt_metric(m['exact_match'], 4)} | "
+            f"{fmt_metric(m['kappa'], 4) if 'kappa' in m else 'n/a'} |"
         )
     sal = r.salary
     rows.append(
-        f"| salary (cur/kind/amt) | "
-        f"{sal.get('currency')}/{sal.get('kind')}/{sal.get('amount')} | | | |"
+        f"| salary (detect; cur/kind/amt) | {fmt_metric(sal.get('detection'), 4)}; "
+        f"{fmt_metric(sal.get('currency'), 4)}/{fmt_metric(sal.get('kind'), 4)}/"
+        f"{fmt_metric(sal.get('amount'), 4)} | | | |"
     )
     return "\n".join(rows)
 

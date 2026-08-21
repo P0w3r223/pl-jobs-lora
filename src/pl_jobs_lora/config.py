@@ -44,6 +44,9 @@ class CollectionConfig:
 @dataclass(frozen=True)
 class ScoringConfig:
     salary_rel_tolerance: float
+    bootstrap_resamples: int
+    bootstrap_seed: int
+    bootstrap_ci: float
 
 
 @dataclass(frozen=True)
