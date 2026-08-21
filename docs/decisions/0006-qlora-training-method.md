@@ -41,8 +41,9 @@ prompt, and scorer are fixed for eval fairness. This ADR decides only the traini
 ### Training regime
 - **A — inner temporal dev split, short run, dev-selected checkpoint (chosen).** Newest ~10% of
   the 568 → dev (~511/57). 3 epochs; LR 2e-4 cosine, `warmup_ratio` 0.05; `paged_adamw_8bit`;
-  effective batch 16 (`per_device` 4 × `grad_accum` 4, ~96 steps); `max_seq_len` set from a
-  real-tokenizer measurement to cover ~p99 with completion-preserving prose truncation;
+  effective batch 16 (`per_device` 1 × `grad_accum` 16, ~96 steps — see the 2026-08-21 amendment);
+  `max_seq_len` set from a real-tokenizer measurement to cover ~p99 with completion-preserving
+  prose truncation;
   `packing=False`; fixed seed. Checkpoint + hyperparameters chosen by dev field-F1 (small
   epochs×eff-batch sweep); test touched once.
 - **B — no dev split, fixed epochs.** Rejected: leaves checkpoint/epoch selection with nowhere to
@@ -105,3 +106,28 @@ overfit risk. All knobs go into a new `configs/config.yaml` `train:` block — n
 Tokenize the 568 train records with the real Bielik tokenizer, set `train.max_seq_len` to cover
 ~p99 of prompt+completion, and verify the completion (gold JSON) is never truncated. The config
 default (2048) is an estimate from character lengths, to be confirmed from data.
+
+### Amendment — 2026-08-21: the estimate was measured, and it was wrong by half
+
+Step 0 was run early and locally, against the Bielik Q8_0 GGUF (same model, same vocabulary as the
+HF checkpoint the trainer loads), over all 568 train records. Prompt+completion measures
+**p50 3259, p90 3708, p95 3851, p99 4193, max 4759** tokens.
+
+The 2048 default would therefore have truncated the prose of **100 %** of training examples, the
+median posting losing roughly a third of its text. The completion-preserving truncation in
+`encode_example` means this would never have shown up as malformed targets — it would have quietly
+trained the model to extract from prose whose tail had been removed, on a task where ADR-0003
+already shows the labels are only partly present in the prose to begin with. A silent input
+degradation on top of a measured data ceiling is the worst-shaped failure this project could have
+shipped, which is why the value is written from data now rather than discovered mid-session.
+
+`train.max_seq_len` is **4096**: it covers p99 and truncates 8 records (1.4 %) by a short tail,
+where 5120 would cover all 568 at a memory cost the free-tier GPU has to pay on every step.
+Activation memory scales with batch × seq, so the effective batch of 16 is now `per_device` 1 ×
+`grad_accum` 16 rather than 4 × 4 — same batch, same ~96 steps, a quarter of the per-step
+activation footprint.
+
+Two caveats, both for Step 0 on the GPU to close. The count is over message contents; the HF chat
+template adds role markers on top, so these are a floor and the real sequences are slightly longer.
+And **the batch split is unverified on the GPU** — it is chosen to make an OOM unlikely rather than
+measured, so if `per_device` 2 fits, it is worth taking for the throughput.
