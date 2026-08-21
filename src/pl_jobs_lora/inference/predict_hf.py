@@ -7,11 +7,11 @@ prompt (``build_messages``) and the parser (``parse_output``) are the shared one
 greedy with the token cap matched to ``eval.max_tokens``, and base vs adapter differ by exactly one
 toggle on an otherwise-identical load.
 
-transformers/peft are imported lazily (Colab-only GPU stack, ADR-0004); a ``generate_fn`` seam lets
+transformers/peft are imported lazily (hosted-GPU-only stack, ADR-0004); a ``generate_fn`` seam lets
 the assembly run offline in tests. Predictions echo prose and are gitignored; only the report is
 committed.
 
-    # on Colab (GPU), after training / with the adapter on HF:
+    # on the hosted GPU, after training / with the adapter on HF:
     python -m pl_jobs_lora.inference.predict_hf --base --lora
 """
 
@@ -145,8 +145,6 @@ def _run_variant(
         saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
         if saved is not None:
             print(f"[predict-hf] superseded rows saved to {saved.name}", flush=True)
-
-    if todo:
         print(f"[predict-hf] {variant}: {len(done)} cached, {len(todo)} to run", flush=True)
         with resume.append_sink(path, done) as sink:
             run_inference(cfg, todo, shots, mode=mode, generate_fn=generate_fn, on_prediction=sink)

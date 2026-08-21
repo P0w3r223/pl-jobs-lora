@@ -1,7 +1,7 @@
 """QLoRA fine-tune of Bielik-1.5B: zero-shot completion SFT (S5; ADR-0006).
 
-Colab-only trainer — the GPU stack (transformers/peft/bitsandbytes/trl) lives in
-``requirements-train.txt`` and is imported lazily inside ``run_training`` so the pure parts here
+Hosted-GPU trainer (Kaggle today, ADR-0004) — the GPU stack (transformers/peft/bitsandbytes/trl)
+lives in ``requirements-train.txt`` and is imported lazily inside ``run_training`` so the pure parts
 (SFT formatting, the temporal dev split, completion masking) stay importable and testable on the
 local CPU ``.venv`` (ADR-0004 dependency split).
 
@@ -13,7 +13,7 @@ target is asserted to round-trip through ``JobPosting`` at prep time, so the mod
 schema-valid output. The adapter is pushed to HF Hub; the untuned base is evaluated from the *same*
 4-bit load with the adapter disabled, so the adapter-vs-base comparison isolates one variable.
 
-    # on Colab, after `pip install -r requirements-train.txt`:
+    # on the hosted GPU, after `pip install -r requirements-train.txt`:
     python -m pl_jobs_lora.train.qlora --push
 """
 
@@ -89,7 +89,8 @@ def encode_example(tokenizer, sft: dict, max_seq_len: int) -> dict:
     template that breaks that assumption fails loudly instead of silently mis-masking every example.
     On overflow only the posting (the last user message) is shortened — never the completion or the
     fixed system/schema/assistant-header scaffold — so the JSON target is always trained whole
-    (ADR-0006). ``max_seq_len`` is sized to ~p99 on Colab (Step 0), so this rarely fires.
+    (ADR-0006). ``max_seq_len`` is sized to ~p99 of the measured token distribution, so this
+    rarely fires.
     """
     def _ids(messages, *, with_completion):
         msgs = messages + (
@@ -116,7 +117,7 @@ def encode_example(tokenizer, sft: dict, max_seq_len: int) -> dict:
     }
 
 
-# -- Colab GPU training (lazy imports; requires requirements-train.txt) ----------------------------
+# -- hosted-GPU training (lazy imports; requires requirements-train.txt) ---------------------------
 
 def run_training(cfg: Config, *, processed_dir: Path = _PROCESSED, out_dir: Path = _OUT,
                  push: bool = False) -> Path:
