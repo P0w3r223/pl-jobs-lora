@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pl_jobs_lora.eval import bootstrap as bootstrap_mod
+from pl_jobs_lora.eval import ceiling as ceiling_mod
 from pl_jobs_lora.eval import pricing, scoring
 from pl_jobs_lora.eval.scoring import fmt_metric
 
@@ -64,13 +65,25 @@ class ComparisonReport:
     metadata: dict
     variants: list[VariantReport]
     bootstrap: bootstrap_mod.BootstrapReport | None = None
+    ceilings: dict | None = None       # field -> ceiling.FieldCeiling
 
     def as_dict(self) -> dict:
         return {
             "metadata": self.metadata,
             "variants": [v.as_dict() for v in self.variants],
             "bootstrap": self.bootstrap.as_dict() if self.bootstrap else None,
+            "ceilings": (
+                {f: c.as_dict() for f, c in self.ceilings.items()} if self.ceilings else None
+            ),
         }
+
+    def best_recall(self, field: str) -> float | None:
+        """Highest recall any variant reached on a field — what to hold against its ceiling."""
+        values = [
+            v.scores["fields"][field]["recall"] for v in self.variants
+            if field in v.scores["fields"] and v.scores["fields"][field]["recall"] is not None
+        ]
+        return max(values) if values else None
 
     def render_markdown(self) -> str:
         m = self.metadata
@@ -108,6 +121,9 @@ class ComparisonReport:
             ]
             lines.append("| " + " | ".join(cells) + " |")
         sections = [*lines, "", self._render_failures()]
+        if self.ceilings:
+            recalls = {f: self.best_recall(f) for f in self.ceilings}
+            sections += ["", ceiling_mod.render_markdown(self.ceilings, recalls)]
         if self.bootstrap is not None:
             sections += ["", bootstrap_mod.render_markdown(self.bootstrap)]
         return "\n".join(sections) + "\n"
@@ -187,6 +203,11 @@ def load_gold(processed_dir: Path = _PROCESSED) -> list[dict]:
     return [{"offer_id": r["offer_id"], **r["gold"]} for r in rows]
 
 
+def load_test_records(processed_dir: Path = _PROCESSED) -> list[dict]:
+    """Frozen test records *with* their prose — the data ceiling needs the model's actual input."""
+    return _read_jsonl(processed_dir / "test.jsonl")
+
+
 def discover_predictions(pred_dir: Path = _PRED_DIR) -> list[Path]:
     return sorted(pred_dir.glob("*.jsonl"))
 
@@ -238,6 +259,7 @@ def build_report(
     latency_percentiles: tuple[int, ...], api_pricing: str = "",
     decode_max_tokens: int | None = None,
     bootstrap_resamples: int = 0, bootstrap_seed: int = 0, bootstrap_ci: float = 95.0,
+    ceilings: dict | None = None,
 ) -> ComparisonReport:
     preds_by_variant = {path.stem: _read_jsonl(path) for path in prediction_files}
     variants = [
@@ -267,7 +289,9 @@ def build_report(
             preds_by_variant, gold, salary_rel_tolerance=salary_rel_tolerance,
             resamples=bootstrap_resamples, seed=bootstrap_seed, ci=bootstrap_ci,
         )
-    return ComparisonReport(metadata=metadata, variants=variants, bootstrap=resampled)
+    return ComparisonReport(
+        metadata=metadata, variants=variants, bootstrap=resampled, ceilings=ceilings,
+    )
 
 
 def write_report(report: ComparisonReport, out_dir: Path = _RESULTS) -> None:

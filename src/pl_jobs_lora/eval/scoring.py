@@ -24,6 +24,14 @@ from dataclasses import dataclass
 
 SET_FIELDS = ("seniority", "work_mode", "tech_expected", "tech_optional")
 
+# Fields the headline `field F1` averages. `tech_optional` is scored and reported like any other
+# field but deliberately excluded here: only 14-17 % of its gold terms occur anywhere in the prose
+# the model is given (the platform files them in the technologies widget, which the ADR-0002
+# leakage guard strips), and 75 % of the postings that carry gold optional terms contain none of
+# them. Averaging a label the input does not contain into the headline measures the dataset, not
+# the model. See ADR-0003's 2026-08-21 amendment and `eval.ceiling`.
+HEADLINE_FIELDS = ("seniority", "work_mode", "tech_expected")
+
 # Why a prediction was not usable — the vocabulary the parser writes and the report counts.
 # It lives in this module (not in ``eval.prompt``, which owns the parsing) so the offline report
 # can tabulate failures without importing the prompt's HTTP-carrying dependency chain.
@@ -47,14 +55,21 @@ def _round(value: float | None, digits: int = 4) -> float | None:
     return None if value is None else round(value, digits)
 
 
-def mean_measured_f1(fields: dict) -> float | None:
-    """Headline field F1: the mean over fields that *have* support on this test set.
+def mean_measured_f1(
+    fields: dict, headline_fields: tuple[str, ...] = HEADLINE_FIELDS,
+) -> float | None:
+    """Headline field F1: the mean over ``headline_fields`` that *have* support on this test set.
 
-    Fields with no support are unmeasurable, not zero — averaging them in would drag the headline
-    toward whichever fields the test set happens not to exercise (ADR-0003). ``None`` when nothing
-    was measurable at all.
+    Two exclusions, for two different reasons. A field with no support is unmeasurable, not zero —
+    averaging it in would drag the headline toward whichever fields the test set happens not to
+    exercise. A field outside ``headline_fields`` is excluded by decision, not by accident: it is
+    still scored and reported, but is not treated as evidence about the model. ``None`` when
+    nothing was measurable at all.
     """
-    measured = [f["f1"] for f in fields.values() if f["f1"] is not None]
+    measured = [
+        fields[f]["f1"] for f in headline_fields
+        if f in fields and fields[f]["f1"] is not None
+    ]
     return sum(measured) / len(measured) if measured else None
 
 
