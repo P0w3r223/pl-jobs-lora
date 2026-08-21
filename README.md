@@ -38,7 +38,7 @@ task at a fraction of the cost — and here is the measurement.*
   fine-tuned model at ~$0 — at what accuracy?" — the question an employer actually asks.
 - **A defensible base-model choice.** Bielik-1.5B vs Qwen2.5-1.5B was decided by an empirical probe,
   not reputation: on a 23-offer dev slice **Bielik-1.5B few-shot** won on JSON-validity × field
-  accuracy (0.91 valid, 0.32 field F1) — and zero-shot Bielik emitting *no* valid JSON is exactly
+  accuracy (0.91 valid, 0.42 field F1) — and zero-shot Bielik emitting *no* valid JSON is exactly
   the gap QLoRA closes. See [ADR-0001](docs/decisions/0001-base-model-selection.md).
 
 ## Architecture
@@ -223,10 +223,10 @@ toggled) drop in from Colab (S5) below.
 
 | variant | cov | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary detect | salary cur/kind/amt | field F1 | $/1k | p50 s | p95 s |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.23 | – | 21.4 | 103.0 |
-| bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.03 | – | 67.9 | 102.6 |
-| claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.33 | 3.34 | 2.5 | 4.7 |
-| claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.39** | 4.47 | 2.3 | 4.1 |
+| bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.30 | – | 21.4 | 103.0 |
+| bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.04 | – | 67.9 | 102.6 |
+| claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.43 | 3.34 | 2.5 | 4.7 |
+| claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.51** | 4.47 | 2.3 | 4.1 |
 | bielik-1.5b__zero (base, HF 4-bit) | – | – | – | – | – | – | – | – | – | – | – |
 | **bielik-1.5b-lora__zero (QLoRA, ours)** | – | – | – | – | – | – | – | – | – | – | – |
 
@@ -288,9 +288,43 @@ harness can diagnose the next run, not the last one. Re-running the two local GG
 backfill them at no cost beyond CPU time (~3.5 h, no API spend); the API rows would have to be
 re-paid.
 
+### The data ceiling: how much of the label is even in the input
+
+`tech_optional` scored 0.01–0.02 for *every* variant, including the frontier baseline. A metric on
+which the best available model does no better than the worst is usually not measuring the model.
+Three independent checks agree it was not:
+
+- The labeling-QA proposer, reading **prose only** across 708 postings, produced a non-empty
+  `tech_optional` on **27** records — against 575 for `tech_expected`.
+- `claude-haiku-4-5` *does* attempt the field (36 records against a support of 53) and reaches
+  precision **0.03**, while scoring 0.29 on `tech_expected` in the same call.
+- Model-free, searching the text itself: only **14–17 %** of gold `tech_optional` terms occur
+  anywhere in their own posting's prose, and **75 %** of postings carrying gold optional terms
+  contain not one of them. For `tech_expected`: 32–35 % and 36 %.
+
+The cause is a design decision whose size was never measured. Gold tech labels come from the
+platform's technologies widget, and the [ADR-0002](docs/decisions/0002-dataset-and-labeling.md)
+leakage guard strips that widget out of the prose so the task is reading rather than copying. The
+labels it makes unanswerable stayed in the metric anyway.
+
+So `field F1` now averages `seniority`, `work_mode` and `tech_expected`. `tech_optional` is still
+scored and reported — beside its own ceiling — but is not treated as evidence about a model. And
+`--report` prints a **model-free data ceiling**: per field, the share of gold terms present in the
+prose at all.
+
+**This changes how the headline reads.** On the test set the ceiling for `tech_expected` is `0.28`
+and the best recall achieved is `0.27` — the frontier baseline is at **94 % of what the input makes
+recoverable**. Without the ceiling, 0.28 F1 looks like a weak model; with it, the headroom on that
+field is mostly not there to be taken. It also sets honest expectations for the fine-tune: the open
+ground is `JSON validity` (0.05 zero-shot), `seniority` and `work_mode` — `tech_*` is near a data
+ceiling no QLoRA can lift.
+
+The ceiling is a **bound, not a target** (presence is necessary for extraction, not sufficient) and
+matching is deliberately conservative, so read it as a floor on the ceiling.
+
 ### How much of the gap is real (n = 142)
 
-A point estimate over 142 records cannot say whether `0.39` beats `0.23` or whether a different
+A point estimate over 142 records cannot say whether `0.51` beats `0.30` or whether a different
 sample of postings would have reversed it. `--report` now resamples the test set (2000 draws,
 seeded) and reports a 95 % interval per variant, plus **paired** differences against the best
 variant — every variant scored on the *same* drawn records, so the shared difficulty of a draw
@@ -308,12 +342,12 @@ sampling noise. `--no-bootstrap` skips the section; the resampling dominates the
 - After that lands: `.venv/Scripts/python -m pl_jobs_lora.eval.run --report` regenerates this table.
 
 **Known gaps in this harness:**
-- `tech_optional` (support 53/142) scores 0.01–0.02 for *every* variant including the frontier
-  model, yet carries equal weight in `field F1`. Whether to drop it, weight by support, or keep it
-  as an explicit hallucination probe is an open decision.
-- The local side is priced `–` rather than as a number, so the cost comparison is rhetorical.
+- The local side is priced `–` rather than as a number, so the cost comparison is rhetorical until
+  the fine-tune gives real GPU throughput.
 - The bootstrap covers `field F1` and `JSON valid` only — the per-field and salary columns are
   still bare point estimates.
+- The data ceiling is computed for the two tech fields only; `seniority`, `work_mode` and `salary`
+  have no comparable answerability bound, so their scores are still read without one.
 
 ## Data & ethics
 

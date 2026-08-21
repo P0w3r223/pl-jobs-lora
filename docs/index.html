@@ -58,10 +58,10 @@ cost, and latency.</p>
       <th>Variant</th><th>JSON valid</th><th>Field F1</th><th>95&nbsp;% CI</th>
       <th>Seniority F1</th><th>Tech F1</th><th>$ / 1k</th><th>p50 s</th>
     </tr>
-    <tr><td>few-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.39</td><td class="ci">0.36–0.41</td><td>0.62</td><td>0.28</td><td>4.47</td><td>2.3</td></tr>
-    <tr><td>zero-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.33</td><td class="ci">0.29–0.36</td><td>0.44</td><td>0.26</td><td>3.34</td><td>2.5</td></tr>
-    <tr><td>base, few-shot (Bielik-1.5B, CPU)</td><td>0.80</td><td>0.23</td><td class="ci">0.20–0.27</td><td>0.25</td><td>0.12</td><td>–</td><td>21.4</td></tr>
-    <tr><td>base, zero-shot (Bielik-1.5B, CPU)</td><td>0.05</td><td>0.03</td><td class="ci">0.01–0.06</td><td>0.07</td><td>0.01</td><td>–</td><td>67.9</td></tr>
+    <tr><td>few-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.51</td><td class="ci">0.47–0.54</td><td>0.62</td><td>0.28</td><td>4.47</td><td>2.3</td></tr>
+    <tr><td>zero-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.43</td><td class="ci">0.39–0.47</td><td>0.44</td><td>0.26</td><td>3.34</td><td>2.5</td></tr>
+    <tr><td>base, few-shot (Bielik-1.5B, CPU)</td><td>0.80</td><td>0.30</td><td class="ci">0.27–0.34</td><td>0.25</td><td>0.12</td><td>–</td><td>21.4</td></tr>
+    <tr><td>base, zero-shot (Bielik-1.5B, CPU)</td><td>0.05</td><td>0.04</td><td class="ci">0.01–0.07</td><td>0.07</td><td>0.01</td><td>–</td><td>67.9</td></tr>
     <tr class="ours"><td>QLoRA (ours)</td><td>–</td><td>–</td><td class="ci">–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
   </table>
   </div>
@@ -79,10 +79,37 @@ cost, and latency.</p>
   <ul>
     <li>The untuned base <strong>zero-shot emits valid JSON on 5&nbsp;% of postings</strong> — it rambles past the
     object. Few-shot recovers most of that (0.80), which is the gap the fine-tune targets.</li>
-    <li>The frontier baseline is not near-perfect either: <strong>0.39 field F1</strong>. This is a genuinely hard
-    extraction task, not a solved one.</li>
+    <li>The frontier baseline is not near-perfect either: <strong>0.51 field F1</strong>. Part of that is a
+    genuinely hard task and part of it is a ceiling in the data — see below.</li>
     <li>Latency is where the local side already loses badly on CPU — 21&nbsp;s versus 2.3&nbsp;s per posting.</li>
   </ul>
+</div>
+
+<div class="card">
+  <h2>How much of the label is even in the input</h2>
+  <p>The <code>tech_optional</code> field scored 0.01–0.02 for <em>every</em> model, the frontier baseline
+  included. A metric on which the best available model does no better than the worst is usually not
+  measuring the model — and it wasn't. Searching the postings directly, with no model involved:</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Field</th><th>Gold terms</th><th>Present in the prose</th><th>Ceiling on recall</th><th>Postings where none appear</th></tr>
+    <tr><td>tech_expected</td><td>542</td><td>153</td><td>0.28</td><td>41 / 115 (36&nbsp;%)</td></tr>
+    <tr><td>tech_optional</td><td>154</td><td>20</td><td>0.13</td><td>40 / 53 (75&nbsp;%)</td></tr>
+  </table>
+  </div>
+  <p>The gold technology labels come from the platform's structured widget, and the leakage guard strips
+  that widget out of the prose — otherwise the task would be copying a list rather than reading a posting.
+  In three quarters of the postings that have "nice to have" technologies, <strong>not one of them appears in
+  the text the model is given</strong>.</p>
+  <p><strong>This changes how the headline reads.</strong> The ceiling on <code>tech_expected</code> recall is
+  0.28 and the best model reaches 0.27 — <strong>94&nbsp;% of what the input makes recoverable</strong>. Read
+  without the ceiling, that column looks like a weak model; read with it, the headroom is mostly not there
+  to be taken. <code>tech_optional</code> was therefore dropped from the averaged headline — still scored and
+  reported, but no longer treated as evidence about a model.</p>
+  <p class="note">It is a bound, not a target: a term being present is necessary for extraction, not
+  sufficient. Matching is deliberately conservative, so the real ceiling is somewhat higher — read these as
+  a floor. It also sets expectations for the fine-tune: the open ground is JSON validity, seniority and work
+  mode; the technology fields are near a data ceiling no fine-tune can lift.</p>
 </div>
 
 <div class="card correction">
@@ -121,7 +148,7 @@ cost, and latency.</p>
     this harness does not yet quantify, and at what accuracy.</li>
     <li><strong>A base model chosen from data.</strong> Bielik-1.5B versus Qwen2.5-1.5B was decided by an
     empirical probe on a 23-posting development slice, at matched quantization: Bielik-1.5B few-shot led
-    on JSON validity and field accuracy (0.91 valid, 0.32 field F1).</li>
+    on JSON validity and field accuracy (0.91 valid, 0.42 field F1).</li>
     <li><strong>Failures are diagnosable.</strong> Each prediction records <em>why</em> it failed — no JSON, unclosed
     JSON, or schema rejection — and truncation at the token cap is counted separately, so a validity rate
     can be explained rather than just reported.</li>
