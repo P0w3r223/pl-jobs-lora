@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+
+import pytest
 
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.probe import (
     build_variant_report,
+    check_context_fits,
     pick_winner,
     read_predictions,
     render_table,
@@ -74,3 +78,45 @@ def test_write_probe_report_records_the_winner_in_both_artifacts(tmp_path):
     assert written == out
     md = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "cand-a/few" in md and "n=1" in md
+
+
+class _FakeLlm:
+    """Stands in for llama-cpp: one token per whitespace-separated word is enough here."""
+
+    @staticmethod
+    def tokenize(blob: bytes) -> list[int]:
+        return [0] * len(blob.decode("utf-8").split())
+
+
+def _prompt(n_tokens):
+    return [{"role": "user", "content": " ".join("x" * 1 for _ in range(n_tokens))}]
+
+
+def _cfg_with(**probe):
+    return replace(_CFG, probe=replace(_CFG.probe, **probe))
+
+
+def test_context_fit_passes_when_the_longest_prompt_leaves_room():
+    cfg = _cfg_with(context_tokens=1000, max_tokens=400, context_margin_tokens=100)
+    worst = check_context_fits(_FakeLlm, [_prompt(120), _prompt(500)], cfg)
+    assert worst == 500, "the check reports the prompt that came closest to the limit"
+
+
+def test_context_fit_refuses_a_cap_the_longest_prompt_cannot_afford():
+    """Caught before the first token is generated, not at record 90 of a four-hour run."""
+    cfg = _cfg_with(context_tokens=1000, max_tokens=600, context_margin_tokens=100)
+    with pytest.raises(ValueError, match="exceeds the 300 left by n_ctx=1000"):
+        check_context_fits(_FakeLlm, [_prompt(120), _prompt(301)], cfg)
+
+
+def test_context_fit_counts_the_margin_against_the_budget():
+    """The tokenizer sees message contents; the chat template adds role markers on top."""
+    cfg = _cfg_with(context_tokens=1000, max_tokens=600, context_margin_tokens=0)
+    assert check_context_fits(_FakeLlm, [_prompt(400)], cfg) == 400
+    with pytest.raises(ValueError):
+        check_context_fits(_FakeLlm, [_prompt(400)], _cfg_with(
+            context_tokens=1000, max_tokens=600, context_margin_tokens=1))
+
+
+def test_context_fit_is_vacuous_for_an_empty_eval_set():
+    assert check_context_fits(_FakeLlm, [], _CFG) == 0

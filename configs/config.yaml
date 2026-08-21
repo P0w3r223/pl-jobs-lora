@@ -19,9 +19,16 @@ models:
 probe:
   dev_slice_size: 25       # a probe, not the dataset
   temperature: 0.0         # greedy — the only variable is the base model
-  max_tokens: 1024
+  # Raised 1024 -> 2048 on 2026-08-21. At 1024 the cap was binding, which made truncation
+  # indistinguishable from malformed output: every json_decode_error row on both GGUF variants sat
+  # exactly at the cap with an unclosed object (brace balance +1, no '}' anywhere), and a *finished*
+  # zero-shot answer already reached 985 tokens — 96% of the old cap. 2048 is 2.1x the longest
+  # completion the model has ever finished and 2.6x the longest the API baseline produced (774), so
+  # a row still at the cap is now the model failing to terminate rather than the budget running out.
+  max_tokens: 2048
   few_shot_examples: 2
-  context_tokens: 8192     # llama.cpp n_ctx
+  context_tokens: 8192     # llama.cpp n_ctx; worst measured few-shot prompt is 5696 tokens
+  context_margin_tokens: 128   # chat-template role markers the raw tokenizer count does not see
   shot_modes: [zero, few]
 
 # theprotocol collection etiquette (mirrors it-job-radar; ADR-0002 leakage guard applied in code).
@@ -52,7 +59,12 @@ eval:
   api_model: claude-haiku-4-5      # cheap frontier baseline; the only variable vs the base/LoRA runs
   input_usd_per_mtok: 1.0          # claude-haiku-4-5 input price, USD / 1M tokens
   output_usd_per_mtok: 5.0         # claude-haiku-4-5 output price, USD / 1M tokens
-  max_tokens: 1024                 # decoding cap (matches the probe)
+  # Matches probe.max_tokens — decoding is held identical so the only variable is the model.
+  # Raising it does not invalidate the stored API baselines: decoding is greedy, and 0 of their 284
+  # rows reached the old 1024 (longest completion 774), so the cap never bound their output. Those
+  # rows predate the per-row `max_tokens` field; the truncation cross-tab falls back to this value
+  # for them, which still reports them — correctly — as never truncated.
+  max_tokens: 2048                 # decoding cap (matches the probe)
   temperature: 0.0                 # greedy — decoding matched to the probe (only the model differs)
   few_shot_examples: 2             # shots drawn from the train head (matches probe/labeling-QA)
   shot_modes: [zero, few]          # the two API baselines

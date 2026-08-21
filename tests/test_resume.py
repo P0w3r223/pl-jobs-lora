@@ -46,6 +46,31 @@ def test_a_row_missing_a_required_key_is_not_done(tmp_path):
     assert set(resume.load_completed(path)) == {"old", "new"}, "without the requirement, both count"
 
 
+def test_a_row_produced_under_other_settings_is_not_done(tmp_path):
+    """Shape is not enough: a correctly-shaped row can still be the wrong measurement."""
+    path = tmp_path / "p.jsonl"
+    resume.write_jsonl(path, [
+        {"offer_id": "old", "max_tokens": 1024},
+        {"offer_id": "new", "max_tokens": 2048},
+    ])
+    done = resume.load_completed(path, matches=lambda r: r.get("max_tokens") == 2048)
+    assert set(done) == {"new"}
+    assert set(resume.load_completed(path)) == {"old", "new"}, "without the predicate, both count"
+
+
+def test_required_keys_and_matches_both_have_to_pass(tmp_path):
+    path = tmp_path / "p.jsonl"
+    resume.write_jsonl(path, [
+        {"offer_id": "shape-only", "max_tokens": 1024, "raw": "{}"},
+        {"offer_id": "config-only", "max_tokens": 2048},
+        {"offer_id": "both", "max_tokens": 2048, "raw": "{}"},
+    ])
+    done = resume.load_completed(
+        path, required_keys=("raw",), matches=lambda r: r.get("max_tokens") == 2048,
+    )
+    assert set(done) == {"both"}
+
+
 def test_append_sink_heals_a_torn_file_before_appending(tmp_path):
     """The rewrite is what stops an append from merging onto a half-written record."""
     path = tmp_path / "p.jsonl"

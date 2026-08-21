@@ -30,6 +30,7 @@ class ProbeConfig:
     max_tokens: int
     few_shot_examples: int
     context_tokens: int
+    context_margin_tokens: int
     shot_modes: tuple[str, ...]
 
 
