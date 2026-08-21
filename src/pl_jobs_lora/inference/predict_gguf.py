@@ -100,12 +100,21 @@ def _read_existing_ids(path: Path) -> set[str]:
 
 
 def _progress_reporter():
-    """Print a one-line ETA per record — a multi-hour CPU run must be observable while it runs."""
+    """Print a one-line ETA per record — a multi-hour CPU run must be observable while it runs.
+
+    The rate comes from the records *this* process produced, not from the running total: on a
+    resume the total includes work done by an earlier run, and dividing this run's elapsed time by
+    it reports a speed the machine never achieved. Progress is still shown against the whole set,
+    because 53/142 is what the operator wants to see, not 1/90.
+    """
     started = time.perf_counter()
+    produced = 0
 
     def report(done: int, total: int) -> None:
+        nonlocal produced
+        produced += 1
         elapsed = time.perf_counter() - started
-        remaining = (elapsed / done) * (total - done) if done else 0.0
+        remaining = (elapsed / produced) * (total - done)
         print(
             f"[predict-gguf] {done}/{total}  elapsed {elapsed / 60:.1f} min  "
             f"eta {remaining / 60:.1f} min",

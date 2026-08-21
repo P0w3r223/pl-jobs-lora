@@ -165,3 +165,23 @@ def test_progress_is_reported_against_the_whole_set_not_just_the_todo(monkeypatc
         on_progress=lambda done, total: seen.append((done, total)),
     )
     assert seen == [(3, 4), (4, 4)]
+
+
+def test_eta_rate_comes_from_this_run_not_the_resumed_total(monkeypatch):
+    """A resume must not divide this run's elapsed time by work an earlier run did.
+
+    Doing so reports a speed the machine never achieved — at 50 cached and 2 produced it read as
+    if 52 records had been done in this run's few minutes, and the ETA came out ~6x optimistic.
+    """
+    clock = iter([0.0, 60.0, 120.0])          # start, then one minute per produced record
+    monkeypatch.setattr(pg.time, "perf_counter", lambda: next(clock))
+    printed: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(a[0]))
+
+    report = pg._progress_reporter()
+    report(51, 142)                            # 50 were cached; this is the 1st produced here
+    report(52, 142)                            # 2nd produced, 90 still outstanding
+
+    # 2 records in 2 minutes -> 1 min each -> 90 remaining is 90 minutes, not 3.5.
+    assert "eta 90.0 min" in printed[-1]
+    assert "52/142" in printed[-1], "progress still reads against the whole set"

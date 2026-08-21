@@ -99,6 +99,7 @@ def run_baseline_inference(
             "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
             "input_tokens": in_tok, "output_tokens": out_tok,
+            "max_tokens": cfg.eval.max_tokens,   # the cap this row decoded under
         })
     return preds
 

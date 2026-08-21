@@ -181,12 +181,16 @@ def tally_failures(
         if cls not in scoring.PARSE_FAILURES:
             cls = scoring.UNRECORDED
         counts[cls] = counts.get(cls, 0) + 1
+        # The row's own cap wins over the caller's default: the GGUF variants decode under
+        # probe.max_tokens and the API ones under eval.max_tokens, so one global value would
+        # silently attribute a truncation against a limit that variant never ran with.
+        cap = p.get("max_tokens") or decode_max_tokens
         out_tokens = p.get("output_tokens")
         if (
             cls == scoring.JSON_DECODE_ERROR
-            and decode_max_tokens
+            and cap
             and out_tokens is not None
-            and out_tokens >= decode_max_tokens
+            and out_tokens >= cap
         ):
             at_cap += 1
     return {k: counts[k] for k in scoring.PARSE_FAILURES if k in counts}, at_cap
