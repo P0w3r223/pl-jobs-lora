@@ -99,6 +99,7 @@ def run_inference(
             "offer_id": ex.offer_id, "valid": result.valid, "parsed": result.parsed,
             "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
+            "max_tokens": cfg.eval.max_tokens,   # the cap this row decoded under
         })
     return preds
 

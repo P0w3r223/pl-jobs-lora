@@ -201,6 +201,28 @@ def test_decode_failures_at_the_token_cap_are_separated_from_malformed_ones():
     assert at_cap == 1
 
 
+def test_a_rows_own_cap_beats_the_callers_default():
+    """GGUF decodes under probe.max_tokens and the API under eval.max_tokens.
+
+    One global value would attribute a truncation against a limit the variant never ran with —
+    and this cross-tab is now used to decide whether a failure is the model's or the harness's.
+    """
+    preds = [
+        {"offer_id": "a", "valid": False, "parsed": None, "failure": scoring.JSON_DECODE_ERROR,
+         "output_tokens": 512, "max_tokens": 512},      # capped under its own, smaller limit
+        {"offer_id": "b", "valid": False, "parsed": None, "failure": scoring.JSON_DECODE_ERROR,
+         "output_tokens": 512, "max_tokens": 2048},     # nowhere near its own limit
+    ]
+    assert tally_failures(preds, decode_max_tokens=1024)[1] == 1
+
+
+def test_a_row_without_its_own_cap_falls_back_to_the_default():
+    """Rows written before the cap was recorded still cross-tab against the configured value."""
+    preds = [{"offer_id": "a", "valid": False, "parsed": None,
+              "failure": scoring.JSON_DECODE_ERROR, "output_tokens": 1024}]
+    assert tally_failures(preds, decode_max_tokens=1024)[1] == 1
+
+
 def test_token_cap_cross_tab_is_skipped_when_the_cap_is_unknown():
     preds = [{"offer_id": "a", "valid": False, "parsed": None,
               "failure": scoring.JSON_DECODE_ERROR, "output_tokens": 1024}]
