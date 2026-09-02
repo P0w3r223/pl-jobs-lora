@@ -55,6 +55,33 @@ def _gguf_path(cand: ModelCandidate) -> Path:
     )
 
 
+def check_context_fits(llm, prompts: list[list[dict]], cfg: Config) -> int:
+    """Raise unless every prompt leaves room for a whole completion. Returns the longest prompt.
+
+    The prompt and the completion share one ``n_ctx``, so raising the decoding cap eats headroom
+    the longest posting was already using. Checked once up front rather than per record: a run that
+    only discovers this at record 90 has burned an hour to report a config error.
+
+    The count is over the message contents; the chat template wraps them in role markers this
+    tokenizer call does not see, so ``context_margin_tokens`` covers what the floor misses.
+    """
+    if not prompts:
+        return 0
+    budget = cfg.probe.context_tokens - cfg.probe.max_tokens - cfg.probe.context_margin_tokens
+    worst = max(
+        len(llm.tokenize("\n".join(m["content"] for m in msgs).encode("utf-8")))
+        for msgs in prompts
+    )
+    if worst > budget:
+        raise ValueError(
+            f"prompt of {worst} tokens exceeds the {budget} left by n_ctx="
+            f"{cfg.probe.context_tokens} minus max_tokens={cfg.probe.max_tokens} and a "
+            f"{cfg.probe.context_margin_tokens}-token template margin: lower probe.max_tokens "
+            f"or raise probe.context_tokens."
+        )
+    return worst
+
+
 def run_inference(
     cand: ModelCandidate, mode: str, eval_set: list[DevExample],
     shots: list[DevExample], cfg: Config,
@@ -74,9 +101,12 @@ def run_inference(
         model_path=str(_gguf_path(cand)), n_ctx=cfg.probe.context_tokens,
         n_threads=None, verbose=False,
     )
+    prompts = [build_messages(ex, shots, n_shots=n_shots) for ex in eval_set]
+    worst = check_context_fits(llm, prompts, cfg)
+    print(f"[probe] worst prompt {worst} tokens, cap {cfg.probe.max_tokens}, "
+          f"n_ctx {cfg.probe.context_tokens}")
     preds: list[dict] = []
-    for ex in eval_set:
-        messages = build_messages(ex, shots, n_shots=n_shots)
+    for ex, messages in zip(eval_set, prompts, strict=True):
         t0 = time.perf_counter()
         resp = llm.create_chat_completion(
             messages=messages, temperature=cfg.probe.temperature, max_tokens=cfg.probe.max_tokens,

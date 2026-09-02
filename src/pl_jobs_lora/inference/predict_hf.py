@@ -7,11 +7,11 @@ prompt (``build_messages``) and the parser (``parse_output``) are the shared one
 greedy with the token cap matched to ``eval.max_tokens``, and base vs adapter differ by exactly one
 toggle on an otherwise-identical load.
 
-transformers/peft are imported lazily (Colab-only GPU stack, ADR-0004); a ``generate_fn`` seam lets
+transformers/peft are imported lazily (hosted-GPU-only stack, ADR-0004); a ``generate_fn`` seam lets
 the assembly run offline in tests. Predictions echo prose and are gitignored; only the report is
 committed.
 
-    # on Colab (GPU), after training / with the adapter on HF:
+    # on the hosted GPU, after training / with the adapter on HF:
     python -m pl_jobs_lora.inference.predict_hf --base --lora
 """
 
@@ -22,6 +22,7 @@ import json
 import time
 from pathlib import Path
 
+from pl_jobs_lora import resume
 from pl_jobs_lora.config import Config, load_config
 from pl_jobs_lora.dataset.collect import DevExample
 from pl_jobs_lora.eval.baselines import to_dev_examples, write_predictions
@@ -82,10 +83,13 @@ def hf_generate(model, tokenizer, messages: list[dict], max_new_tokens: int) -> 
 
 def run_inference(
     cfg: Config, eval_set: list[DevExample], shots: list[DevExample], *,
-    mode: str, generate_fn,
+    mode: str, generate_fn, on_prediction=None,
 ) -> list[dict]:
     """Generate + parse predictions for one shot-mode. ``generate_fn(messages) -> raw`` is injected
-    (the HF model in production, a fake in tests). No token counts — a local run is ~$0."""
+    (the HF model in production, a fake in tests). No token counts — a local run is ~$0.
+
+    ``on_prediction`` receives each row as it is produced, so a hosted-GPU session that disconnects
+    mid-variant loses one record rather than the whole variant."""
     n_shots = cfg.eval.few_shot_examples if mode == "few" else 0
     alias_index = load_tech_aliases()
     preds: list[dict] = []
@@ -95,12 +99,15 @@ def run_inference(
         raw = generate_fn(messages)
         latency = time.perf_counter() - t0
         result = parse_result(raw, alias_index)
-        preds.append({
+        pred = {
             "offer_id": ex.offer_id, "valid": result.valid, "parsed": result.parsed,
             "failure": result.failure, "raw": raw,
             "latency_s": round(latency, 3),
             "max_tokens": cfg.eval.max_tokens,   # the cap this row decoded under
-        })
+        }
+        if on_prediction is not None:
+            on_prediction(pred)
+        preds.append(pred)
     return preds
 
 
@@ -112,16 +119,57 @@ def _hf_generate_factory(tokenizer, max_new_tokens: int):
     return factory
 
 
+# A current prediction row carries the failure taxonomy (ADR-0003) and the cap it decoded under.
+_CURRENT_ROW_KEYS = ("failure", "raw")
+
+
+def _run_variant(
+    cfg: Config, variant: str, eval_set: list[DevExample], shots: list[DevExample], *,
+    mode: str, generate_fn, pred_dir: Path, fresh: bool,
+) -> list[dict]:
+    """One variant, resumably — see :mod:`pl_jobs_lora.resume`.
+
+    This runs on a hosted GPU whose session can end without warning and whose quota is finite, so a
+    disconnect at record 130 must cost one record rather than the variant. Rows that decoded under a
+    different ``eval.max_tokens`` are outstanding for the same reason they are in the GGUF runner:
+    keeping them would leave one file averaging two decoding budgets.
+    """
+    path = pred_dir / f"{variant}.jsonl"
+    done = {} if fresh else resume.load_completed(
+        path, required_keys=_CURRENT_ROW_KEYS,
+        matches=lambda row: row.get("max_tokens") == cfg.eval.max_tokens,
+    )
+    todo = [ex for ex in eval_set if ex.offer_id not in done]
+
+    if todo:
+        saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
+        if saved is not None:
+            print(f"[predict-hf] superseded rows saved to {saved.name}", flush=True)
+        print(f"[predict-hf] {variant}: {len(done)} cached, {len(todo)} to run", flush=True)
+        with resume.append_sink(path, done) as sink:
+            run_inference(cfg, todo, shots, mode=mode, generate_fn=generate_fn, on_prediction=sink)
+
+    # Deterministic file content once complete: the append order of a resumed run reflects when the
+    # session dropped, not the data.
+    preds = [done[ex.offer_id] for ex in eval_set if ex.offer_id in done]
+    if len(preds) == len(eval_set):
+        write_predictions(variant, preds, pred_dir)
+    return preds
+
+
 def run_predictions(
     cfg: Config, *, base: bool = True, lora: bool = False,
     processed_dir: Path = _PROCESSED, pred_dir: Path = _PRED_DIR, limit: int = 0,
-    load_fn=load_base, attach_fn=attach_adapter, generate_factory=None,
+    load_fn=load_base, attach_fn=attach_adapter, generate_factory=None, fresh: bool = False,
 ) -> dict[str, list[dict]]:
     """Emit prediction files for the requested variants over the frozen test set. Needs a GPU.
 
     ``load_fn``/``attach_fn``/``generate_factory`` are injectable seams so the fairness-critical
     wiring (base-before-adapter ordering, variant naming, one 4-bit load with only the adapter
     toggled) is exercised offline in tests without transformers/peft.
+
+    **Resumable**: each row is appended as it is produced and a restart skips what is already on
+    disk, so re-running after a dropped session finishes the work instead of repeating it.
     """
     base_key = resolve_base(cfg).key
     test = _read_jsonl(processed_dir / "test.jsonl")
@@ -136,16 +184,18 @@ def run_predictions(
     if base:
         gen = factory(model)  # adapter disabled — the untuned base
         for mode in ("zero", "few"):
-            preds = run_inference(cfg, eval_set, shots, mode=mode, generate_fn=gen)
             variant = f"{base_key}__{mode}"
-            write_predictions(variant, preds, pred_dir)
-            out[variant] = preds
+            out[variant] = _run_variant(
+                cfg, variant, eval_set, shots, mode=mode, generate_fn=gen,
+                pred_dir=pred_dir, fresh=fresh,
+            )
     if lora:
         gen = factory(attach_fn(model, cfg.hf.adapter_repo))  # same 4-bit weights, adapter on
-        preds = run_inference(cfg, eval_set, shots, mode="zero", generate_fn=gen)
         variant = f"{base_key}-lora__zero"
-        write_predictions(variant, preds, pred_dir)
-        out[variant] = preds
+        out[variant] = _run_variant(
+            cfg, variant, eval_set, shots, mode="zero", generate_fn=gen,
+            pred_dir=pred_dir, fresh=fresh,
+        )
     return out
 
 
@@ -154,12 +204,18 @@ def main() -> None:
     ap.add_argument("--base", action="store_true", help="predict the untuned base (zero + few)")
     ap.add_argument("--lora", action="store_true", help="predict the QLoRA adapter (zero-shot)")
     ap.add_argument("--limit", type=int, default=0, help="cap test examples for a smoke run")
+    ap.add_argument(
+        "--fresh", action="store_true",
+        help="recompute every record instead of resuming from the predictions file",
+    )
     args = ap.parse_args()
     if not (args.base or args.lora):
         ap.error("pass --base and/or --lora")
 
     cfg = load_config()
-    out = run_predictions(cfg, base=args.base, lora=args.lora, limit=args.limit)
+    out = run_predictions(
+        cfg, base=args.base, lora=args.lora, limit=args.limit, fresh=args.fresh,
+    )
     for variant, preds in out.items():
         valid = sum(int(p["valid"]) for p in preds)
         print(f"[predict] {variant}: {len(preds)} predictions, {valid} valid JSON")

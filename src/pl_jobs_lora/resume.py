@@ -18,6 +18,10 @@ Three properties this file is responsible for:
   fields a *current* record must carry; rows written by an older version of the producer are
   treated as outstanding instead of silently kept. This is what lets a schema change be backfilled
   by re-running rather than by hand-editing files.
+- **A stale record *configuration* is not mistaken for done either.** ``matches`` extends the same
+  idea from shape to content: a row measured under settings the run no longer uses is outstanding.
+  Without it, changing a decoding knob would leave a file that silently mixes two configurations
+  while reporting as one measurement.
 """
 
 from __future__ import annotations
@@ -30,12 +34,17 @@ from pathlib import Path
 
 def load_completed(
     path: Path, *, key: str = "offer_id", required_keys: tuple[str, ...] = (),
+    matches: Callable[[dict], bool] | None = None,
 ) -> dict[str, dict]:
     """Records already on disk, keyed by ``key`` — the ones a resume may skip.
 
     A line that does not parse is dropped (the torn tail of a killed run). A record missing any of
     ``required_keys`` is dropped too: it was written by an older producer and re-running is the
     only way to bring it up to the current shape.
+
+    ``matches`` rejects records that are shaped correctly but were produced under settings this run
+    no longer uses. Re-running them is the only way to make the file one measurement rather than
+    two overlaid.
     """
     if not path.exists():
         return {}
@@ -49,6 +58,8 @@ def load_completed(
         except json.JSONDecodeError:
             continue
         if key not in record or any(k not in record for k in required_keys):
+            continue
+        if matches is not None and not matches(record):
             continue
         done[record[key]] = record
     return done
@@ -97,3 +108,34 @@ def backup_once(path: Path, suffix: str) -> Path | None:
         return None
     target.write_bytes(path.read_bytes())
     return target
+
+
+def superseded_suffix(rows: list[dict], *, required_keys: tuple[str, ...] = ()) -> str:
+    """Name a backup after what the rows it holds were measured under.
+
+    :func:`backup_once` takes a given suffix only once, so a fixed name would let the second
+    supersede of a file silently discard what the first saved — and these files are the evidence
+    behind published numbers. Rows name the cap they recorded; rows from before that field existed
+    name the generation they belong to instead, which keeps those two cases from colliding.
+    """
+    caps = sorted({row.get("max_tokens") for row in rows} - {None})
+    if caps:
+        return ".cap" + "-".join(str(c) for c in caps)
+    current_shape = all(all(k in row for k in required_keys) for row in rows)
+    return ".uncapped" if required_keys and current_shape else ".pre-taxonomy"
+
+
+def backup_superseded(
+    path: Path, kept: dict[str, dict], *, required_keys: tuple[str, ...] = (),
+) -> Path | None:
+    """Copy ``path`` aside when this run is about to drop rows it cannot use.
+
+    ``kept`` is what :func:`load_completed` accepted under the current shape and configuration;
+    anything on disk beyond it is about to be recomputed and overwritten. Lives here rather than in
+    each producer because the two of them ran their own copies of this rule and had already drifted
+    apart on which suffix an uncapped row earns.
+    """
+    existing = list(load_completed(path).values())
+    if len(kept) >= len(existing):
+        return None
+    return backup_once(path, superseded_suffix(existing, required_keys=required_keys))

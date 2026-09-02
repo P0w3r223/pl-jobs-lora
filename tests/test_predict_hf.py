@@ -5,7 +5,9 @@ Offline — ``generate_fn`` is injected, so transformers/peft and the GPU are ne
 
 from __future__ import annotations
 
+import contextlib
 import json
+from dataclasses import replace
 
 from pl_jobs_lora.config import load_config
 from pl_jobs_lora.dataset.collect import DevExample
@@ -97,3 +99,100 @@ def test_run_predictions_variants_and_base_before_adapter(tmp_path):
     assert (pred_dir / "bielik-1.5b-lora__zero.jsonl").exists()
     # base (adapter off) is generated before the LoRA variant (adapter on), from one load
     assert "LORA" in seen and seen.index("BASE") < seen.index("LORA")
+
+
+def _seed_run(tmp_path, *, fail_at=None):
+    """A tmp frozen set plus a generator that records which ids the GPU was actually asked for."""
+    processed = tmp_path / "processed"
+    processed.mkdir(exist_ok=True)
+    _write_jsonl(processed / "train.jsonl", [_record(f"t{i}") for i in range(3)])
+    _write_jsonl(processed / "test.jsonl", [_record(f"e{i}") for i in range(4)])
+    asked: list[str] = []
+
+    def gen_factory(model):
+        def gen(messages):
+            if fail_at is not None and len(asked) == fail_at:
+                raise RuntimeError("session disconnected")
+            asked.append(model)
+            return json.dumps({"title": "X"})
+        return gen
+
+    return processed, tmp_path / "predictions", asked, gen_factory
+
+
+def _run(cfg, processed, pred_dir, gen_factory, **over):
+    return run_predictions(
+        cfg, base=True, lora=False, processed_dir=processed, pred_dir=pred_dir,
+        load_fn=lambda c: ("BASE", "TOK"), attach_fn=lambda m, r: "LORA",
+        generate_factory=gen_factory, **over,
+    )
+
+
+def test_a_dropped_gpu_session_costs_one_record_not_the_variant(tmp_path):
+    """Kaggle sessions end without warning and the quota is finite — the whole point of resuming."""
+    cfg = load_config()
+    processed, pred_dir, asked, gen_factory = _seed_run(tmp_path, fail_at=3)
+    with contextlib.suppress(RuntimeError):
+        _run(cfg, processed, pred_dir, gen_factory)
+
+    path = pred_dir / "bielik-1.5b__zero.jsonl"
+    survived = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert [r["offer_id"] for r in survived] == ["e0", "e1", "e2"]
+
+    processed, _, asked, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory)
+    assert len(asked) == 5, "only the outstanding record of zero plus the whole few variant"
+
+
+def test_a_finished_variant_does_not_spend_quota_twice(tmp_path):
+    cfg = load_config()
+    processed, pred_dir, _, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory)
+
+    processed, _, asked, gen_factory = _seed_run(tmp_path)
+    out = _run(cfg, processed, pred_dir, gen_factory)
+    assert asked == []
+    assert len(out["bielik-1.5b__zero"]) == 4
+
+
+def test_rows_decoded_under_another_cap_are_rerun(tmp_path):
+    cfg = load_config()
+    processed, pred_dir, _, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory)
+
+    raised = replace(cfg, eval=replace(cfg.eval, max_tokens=cfg.eval.max_tokens * 2))
+    processed, _, asked, gen_factory = _seed_run(tmp_path)
+    _run(raised, processed, pred_dir, gen_factory)
+    assert len(asked) == 8, "both variants re-run: no row measured under the old cap counts"
+    rows = [json.loads(x) for x in
+            (pred_dir / "bielik-1.5b__zero.jsonl").read_text(encoding="utf-8").splitlines()
+            if x.strip()]
+    assert {r["max_tokens"] for r in rows} == {raised.eval.max_tokens}
+    backup = pred_dir / f"bielik-1.5b__zero.jsonl.cap{cfg.eval.max_tokens}"
+    assert backup.exists(), "the superseded measurement was kept"
+
+
+def test_fresh_recomputes_a_complete_file(tmp_path):
+    cfg = load_config()
+    processed, pred_dir, _, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory)
+
+    processed, _, asked, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory, fresh=True)
+    assert len(asked) == 8
+
+
+def test_a_resumed_file_is_written_in_eval_order(tmp_path):
+    """Append order records when the session dropped; the artefact should not."""
+    cfg = load_config()
+    processed, pred_dir, _, gen_factory = _seed_run(tmp_path, fail_at=2)
+    with contextlib.suppress(RuntimeError):
+        _run(cfg, processed, pred_dir, gen_factory)
+    path = pred_dir / "bielik-1.5b__zero.jsonl"
+    rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    _write_jsonl(path, list(reversed(rows)))
+
+    processed, _, _, gen_factory = _seed_run(tmp_path)
+    _run(cfg, processed, pred_dir, gen_factory)
+    final = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert [r["offer_id"] for r in final] == ["e0", "e1", "e2", "e3"]

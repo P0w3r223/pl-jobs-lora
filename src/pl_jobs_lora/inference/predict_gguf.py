@@ -37,6 +37,18 @@ def _read_jsonl(path: Path) -> list[dict]:
 _CURRENT_ROW_KEYS = ("failure", "raw")
 
 
+def _decoded_under(cap: int):
+    """A cached row counts as done only if it decoded under the cap this run uses.
+
+    The cap is not bookkeeping — it is part of what was measured. A row cut off at 1024 tokens
+    would have kept going under 2048, so keeping it would leave a file that averages latency and
+    counts truncations across two decoding budgets while presenting one variant. Rows that predate
+    the ``max_tokens`` field carry no cap at all and cannot prove which one they ran under, so they
+    are outstanding too.
+    """
+    return lambda row: row.get("max_tokens") == cap
+
+
 def run_gguf_predictions(
     cfg: Config, *, mode: str = "few", processed_dir: Path = _PROCESSED,
     pred_dir: Path = _PRED_DIR, limit: int = 0, fresh: bool = False,
@@ -48,11 +60,12 @@ def run_gguf_predictions(
     interruptible: each prediction is appended as it is produced, and a restart skips whatever is
     already on disk. Stop it with Ctrl-C and run the same command later to finish.
 
-    Rows written before the failure taxonomy existed do not count as done — they are re-run, which
-    is what backfills `failure`/`raw` onto the variants measured earlier. Because that discards the
-    old rows, the previous file is copied to ``*.jsonl.pre-taxonomy`` first: they are regenerable,
-    but regenerating them costs the hours this path exists to protect. ``fresh=True`` forces every
-    record to be recomputed.
+    Rows written before the failure taxonomy existed do not count as done, and neither do rows that
+    decoded under a different ``probe.max_tokens``: re-running them is what backfills
+    `failure`/`raw` and what keeps one prediction file from averaging two decoding budgets. Because
+    that discards the old rows, the previous file is copied aside first under a suffix naming the
+    configuration it held — they are regenerable, but regenerating them costs the hours this path
+    exists to protect. ``fresh=True`` forces every record to be recomputed.
     """
     from pl_jobs_lora import probe  # local: probe.run_inference lazily imports llama-cpp
 
@@ -67,16 +80,16 @@ def run_gguf_predictions(
 
     variant = f"{base.key}-gguf__{mode}"
     path = pred_dir / f"{variant}.jsonl"
-    done = {} if fresh else resume.load_completed(path, required_keys=_CURRENT_ROW_KEYS)
+    done = {} if fresh else resume.load_completed(
+        path, required_keys=_CURRENT_ROW_KEYS, matches=_decoded_under(cfg.probe.max_tokens),
+    )
     todo = [ex for ex in eval_set if ex.offer_id not in done]
 
-    if todo and len(done) < len(_read_existing_ids(path)):
-        # About to drop rows the current schema cannot use — keep a copy of what they measured.
-        saved = resume.backup_once(path, ".pre-taxonomy")
+    if todo:
+        # About to drop rows this run cannot use — keep a copy of what they measured.
+        saved = resume.backup_superseded(path, done, required_keys=_CURRENT_ROW_KEYS)
         if saved is not None:
             print(f"[predict-gguf] superseded rows saved to {saved.name}")
-
-    if todo:
         print(f"[predict-gguf] {variant}: {len(done)} cached, {len(todo)} to run")
         with resume.append_sink(path, done) as sink:
             def _sink(pred: dict) -> None:
@@ -92,11 +105,6 @@ def run_gguf_predictions(
     if len(preds) == len(eval_set):
         resume.write_jsonl(path, preds)
     return variant, preds
-
-
-def _read_existing_ids(path: Path) -> set[str]:
-    """Every offer_id on disk, current-schema or not — used only to detect a supersede."""
-    return set(resume.load_completed(path))
 
 
 def _progress_reporter():

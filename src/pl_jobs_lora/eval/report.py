@@ -3,9 +3,9 @@
 Pure and offline. For every ``predictions/{variant}.jsonl`` it scores the variant with the
 ADR-0003 scorer, then folds in API cost (tokens x list price) and p50/p95 latency. Variants
 whose rows carry no token counts — the local base/LoRA/GGUF runs, ~$0 marginal — report no cost,
-so the same report merges the API baselines with predictions dropped in later from Colab. Writes
-the numbers-only ``results/eval/report.{json,md}``; the headline question it answers is whether a
-1.5B local LoRA rivals a frontier API at a fraction of the cost/latency.
+so the same report merges the API baselines with predictions dropped in later from the hosted GPU.
+Writes the numbers-only ``results/eval/report.{json,md}``; the headline question it answers is
+whether a 1.5B local LoRA rivals a frontier API at a fraction of the cost/latency.
 """
 
 from __future__ import annotations

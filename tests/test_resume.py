@@ -46,6 +46,31 @@ def test_a_row_missing_a_required_key_is_not_done(tmp_path):
     assert set(resume.load_completed(path)) == {"old", "new"}, "without the requirement, both count"
 
 
+def test_a_row_produced_under_other_settings_is_not_done(tmp_path):
+    """Shape is not enough: a correctly-shaped row can still be the wrong measurement."""
+    path = tmp_path / "p.jsonl"
+    resume.write_jsonl(path, [
+        {"offer_id": "old", "max_tokens": 1024},
+        {"offer_id": "new", "max_tokens": 2048},
+    ])
+    done = resume.load_completed(path, matches=lambda r: r.get("max_tokens") == 2048)
+    assert set(done) == {"new"}
+    assert set(resume.load_completed(path)) == {"old", "new"}, "without the predicate, both count"
+
+
+def test_required_keys_and_matches_both_have_to_pass(tmp_path):
+    path = tmp_path / "p.jsonl"
+    resume.write_jsonl(path, [
+        {"offer_id": "shape-only", "max_tokens": 1024, "raw": "{}"},
+        {"offer_id": "config-only", "max_tokens": 2048},
+        {"offer_id": "both", "max_tokens": 2048, "raw": "{}"},
+    ])
+    done = resume.load_completed(
+        path, required_keys=("raw",), matches=lambda r: r.get("max_tokens") == 2048,
+    )
+    assert set(done) == {"both"}
+
+
 def test_append_sink_heals_a_torn_file_before_appending(tmp_path):
     """The rewrite is what stops an append from merging onto a half-written record."""
     path = tmp_path / "p.jsonl"
@@ -90,3 +115,48 @@ def test_backup_once_copies_then_refuses_to_overwrite_itself(tmp_path):
 
 def test_backup_once_is_a_noop_when_there_is_nothing_to_save(tmp_path):
     assert resume.backup_once(tmp_path / "absent.jsonl", ".pre-taxonomy") is None
+
+
+_TAXONOMY = ("failure", "raw")
+
+
+def test_superseded_suffix_names_the_configuration_it_holds():
+    rows = [{"max_tokens": 1024}, {"max_tokens": 1024}]
+    assert resume.superseded_suffix(rows, required_keys=_TAXONOMY) == ".cap1024"
+    # A file already mixing caps names both, so neither is lost to the other's backup.
+    mixed = [{"max_tokens": 512}, {"max_tokens": 1024}]
+    assert resume.superseded_suffix(mixed, required_keys=_TAXONOMY) == ".cap512-1024"
+    assert resume.superseded_suffix([{}], required_keys=_TAXONOMY) == ".pre-taxonomy"
+
+
+def test_taxonomy_rows_without_a_cap_do_not_collide_with_the_pre_taxonomy_backup():
+    """The real files hit this: taxonomy-era rows that predate the `max_tokens` field by one commit.
+
+    Naming them `.pre-taxonomy` would send them to a backup that already exists, and `backup_once`
+    refuses to overwrite — so the measurement would vanish exactly when it is being superseded.
+    """
+    current = {"failure": None, "raw": "{}"}
+    assert resume.superseded_suffix([current], required_keys=_TAXONOMY) == ".uncapped"
+    assert resume.superseded_suffix(
+        [current, {"offer_id": "b"}], required_keys=_TAXONOMY
+    ) == ".pre-taxonomy"
+
+
+def test_a_caller_that_declares_no_shape_cannot_claim_the_rows_are_current():
+    """Without `required_keys` every row trivially satisfies the shape — which proves nothing."""
+    assert resume.superseded_suffix([{"failure": None, "raw": "{}"}]) == ".pre-taxonomy"
+
+
+def test_backup_superseded_fires_only_when_rows_are_actually_being_dropped(tmp_path):
+    path = tmp_path / "p.jsonl"
+    rows = [{"offer_id": "a", "failure": None, "raw": "{}", "max_tokens": 1024}]
+    resume.write_jsonl(path, rows)
+
+    kept = resume.load_completed(path, required_keys=_TAXONOMY)
+    assert resume.backup_superseded(path, kept, required_keys=_TAXONOMY) is None, (
+        "nothing is being discarded — a backup here would be noise"
+    )
+
+    saved = resume.backup_superseded(path, {}, required_keys=_TAXONOMY)
+    assert saved is not None and saved.name.endswith(".cap1024")
+    assert _rows(saved) == rows

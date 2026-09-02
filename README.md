@@ -14,7 +14,7 @@ task at a fraction of the cost — and here is the measurement.*
 > normalization, config/tracking layer, and design decisions are built and tested; the base model is
 > **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON dataset is collected,
 > leakage-guarded, and split by publication date**; the **labeling-QA triangulation**, the **S4
-> evaluation harness**, and the **S5 QLoRA trainer + inference** (Colab GPU, with all pure parts tested
+> evaluation harness**, and the **S5 QLoRA trainer + inference** (hosted GPU, with all pure parts tested
 > locally) are built. **Run so far:** the labeling-QA proposer (708/710 postings relabeled from prose)
 > and its human-review queue draw; the untuned base's **local CPU (GGUF) predictions on the full
 > 142-item test set**; and the **`claude-haiku-4-5` API baseline** — both shot modes each, so **four of
@@ -49,14 +49,14 @@ flowchart LR
   COL --> BLD[build: input prose / gold labels, leakage-guarded]
   BLD --> SPL[time-based split] --> HF[(frozen dataset on HF Hub)]
   HF --> BASE[zero/few-shot API + base model] --> PRED1[predictions.jsonl]
-  HF --> TRAIN[QLoRA train on Colab] --> ADP[(adapter on HF)] --> PRED2[predictions.jsonl]
+  HF --> TRAIN[QLoRA train on Kaggle] --> ADP[(adapter on HF)] --> PRED2[predictions.jsonl]
   PRED1 & PRED2 --> SCORE[pure scorer: per-field accuracy x cost x latency] --> REP[comparison table]
 ```
 
 The **local `.venv`** builds the dataset, scores predictions, and runs the CPU base-model probe. The
 **GPU/Linux training stack** (`transformers`/`peft`/`bitsandbytes`) lives in `requirements-train.txt`
-and is installed **only on Colab** — the whole repo (dataset builder, harness, configs) is driven
-locally; the Colab notebook only invokes its scripts. See [ADR-0004](docs/decisions/0004-training-infra.md).
+and is installed **only on the hosted GPU** — the whole repo (dataset builder, harness, configs) is
+driven locally; the notebook only invokes its scripts. See [ADR-0004](docs/decisions/0004-training-infra.md).
 
 ## Install & test
 
@@ -170,7 +170,7 @@ variable across variants is the model.
 predictions file with the ADR-0003 scorer, folds in API cost (tokens × list price, pulled from
 `config.yaml`) and p50/p95 latency, and writes the numbers-only `results/eval/report.{json,md}`.
 Variants without token counts — the local base/LoRA/GGUF runs (~$0 marginal) — report no cost, so the
-same report merges the API baselines with predictions dropped in later from Colab. Predictions echo
+same report merges the API baselines with predictions dropped in later from the hosted GPU. Predictions echo
 prose and are **never committed**; only the report is versioned. Egress is hard-capped at
 `eval.request_max_snippets` per run, and the Anthropic client is imported lazily (`api` extra), so the
 core install, tests, and CI stay fully offline. The report answers the headline question: *does a 1.5B
@@ -182,7 +182,7 @@ malformed JSON) and **bootstrap intervals** with paired variant differences, so 
 is only called real when it survives resampling. Both are pure and offline; both are described under
 Evaluation below and in [ADR-0003](docs/decisions/0003-evaluation-methodology.md).
 
-### Training — QLoRA fine-tune on Colab (ADR-0006)
+### Training — QLoRA fine-tune on a hosted GPU (ADR-0006)
 
 S5 fine-tunes Bielik-1.5B with QLoRA and produces the base/adapter predictions that complete the
 table. The method: **zero-shot completion SFT** — each record is *exactly* the zero-shot eval prompt
@@ -193,13 +193,15 @@ selection so the **142-record test set is scored exactly once** — the fairness
 baselines get no tuning. Salary is honestly a data-availability ceiling (the leakage guard keeps it
 out of the prose the model sees), so `tech_expected` F1 is the metric to watch.
 
-Training needs a **Linux GPU** (bitsandbytes has no Windows/CPU build), so it runs on Colab via
+Training needs a **Linux GPU** (bitsandbytes has no Windows/CPU build, and the local card is a 4 GB
+Pascal), so it runs on a free **Kaggle** T4 via
 [`notebooks/train_qlora.ipynb`](notebooks/train_qlora.ipynb); the GPU stack lives in
-`requirements-train.txt` and is installed **only there** (ADR-0004). The whole repo is driven from
-the notebook — it only invokes these scripts:
+`requirements-train.txt` and is installed **only there** (ADR-0004 and its 2026-08-21 amendment,
+which records why Colab was dropped). The whole repo is driven from the notebook — it only invokes
+these scripts:
 
 ```bash
-# on Colab (GPU), after `pip install -r requirements-train.txt`:
+# on the hosted GPU, after `pip install -r requirements-train.txt`:
 python -m pl_jobs_lora.train.qlora --push                 # fine-tune; push the adapter to HF
 python -m pl_jobs_lora.inference.predict_hf --base --lora  # base (adapter off) + LoRA predictions
 python -m pl_jobs_lora.eval.run --report                   # merge every variant into the table
@@ -209,7 +211,7 @@ python -m pl_jobs_lora.eval.run --report                   # merge every variant
 loads the base and the adapter from the *same* 4-bit weights with only the adapter toggled — so the
 adapter-vs-base comparison isolates one variable. Its predictions carry no token counts, so the report
 prices them at ~$0 (local). The pure parts — SFT formatting, the temporal dev split, completion
-masking — are tested on the local CPU `.venv`; the GPU orchestration is exercised only on Colab.
+masking — are tested on the local CPU `.venv`; the GPU orchestration is exercised only on the hosted GPU.
 `inference/predict_gguf.py` optionally times the base on **local CPU via GGUF** for the latency column
 (the adapter is not GGUF-converted). See [ADR-0006](docs/decisions/0006-qlora-training-method.md).
 
@@ -230,13 +232,13 @@ done, so re-running is what backfills `failure`/`raw` onto variants measured ear
 discards the old rows, the previous file is copied to `*.jsonl.pre-taxonomy` first — regenerable,
 but regenerating costs the hours this path exists to protect.
 
-## Evaluation (partial — local + API rows in, Colab rows pending)
+## Evaluation (partial — local + API rows in, GPU rows pending)
 
 Numbers below are the current `results/eval/report.md`, regenerated by `eval.run --report` as each
 variant's predictions land. The two GGUF rows are the **CPU-latency variant of the untuned base**
 (Q8_0, `predict_gguf.py`, full 142-item test set) — the "runs on a laptop" cost story, not the
 apples-to-apples comparison; the **canonical** base/LoRA rows (HF 4-bit, same weights, adapter
-toggled) drop in from Colab (S5) below.
+toggled) drop in from the hosted GPU (S5) below.
 
 | variant | cov | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary detect | salary cur/kind/amt | field F1 | $/1k | p50 s | p95 s |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -354,7 +356,7 @@ tie as a finding. Few-shot's `+0.06` field F1 over zero-shot **is** separated �
 sampling noise. `--no-bootstrap` skips the section; the resampling dominates the runtime (~8 s).
 
 **Pending (compute run, not code):**
-- QLoRA train + canonical base/LoRA predictions — Colab GPU:
+- QLoRA train + canonical base/LoRA predictions — Kaggle GPU:
   `notebooks/train_qlora.ipynb` (Step-0 measure `max_seq_len`, train, push adapter, `predict_hf --base --lora`)
 - After that lands: `.venv/Scripts/python -m pl_jobs_lora.eval.run --report` regenerates this table.
 
@@ -379,7 +381,7 @@ via `it-job-radar`.
 - [ADR-0001 — base-model selection by empirical probe](docs/decisions/0001-base-model-selection.md)
 - [ADR-0002 — dataset construction + triangulated labeling QA](docs/decisions/0002-dataset-and-labeling.md)
 - [ADR-0003 — per-field metrics with a pure scorer](docs/decisions/0003-evaluation-methodology.md)
-- [ADR-0004 — Colab training, hosted MLflow, HF Hub artifacts](docs/decisions/0004-training-infra.md)
+- [ADR-0004 — hosted-GPU training, hosted MLflow, HF Hub artifacts (amended: Kaggle, not Colab)](docs/decisions/0004-training-infra.md)
 - [ADR-0005 — labeling-QA: adjudication authority + the proposer instrument](docs/decisions/0005-labeling-qa-architecture.md)
 - [ADR-0006 — QLoRA training method: zero-shot completion SFT of Bielik-1.5B](docs/decisions/0006-qlora-training-method.md)
 - [F6 — data-availability verdict](docs/research/f6-data-availability.md)
