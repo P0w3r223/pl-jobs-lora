@@ -3,39 +3,116 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pl-jobs-lora — QLoRA for Polish job-posting extraction</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>The best available model recovers 94% of what the input makes recoverable — pl-jobs-lora</title>
+<meta name="description" content="A QLoRA fine-tune of a small Polish LLM that turns job-posting prose into structured JSON, compared against zero-shot and few-shot API baselines on accuracy, cost and latency — with a model-free measurement of what the input can support at all.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="The best available model recovers 94% of what the input makes recoverable">
+<meta property="og:description" content="A field scoring 0.01 for every model, the frontier baseline included, is usually not measuring the model. Searching the postings with no model involved says the ceiling on recall is 0.28.">
+<meta property="og:url" content="https://p0w3r223.github.io/pl-jobs-lora/">
+<meta name="twitter:card" content="summary">
+<!-- An inline SVG favicon, so the page makes no request for it and there is no binary
+     artifact with no committed source. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>&#129513;</text></svg>">
 <style>
-  body { font: 16px/1.55 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+/* `0007` §5 clause 1's ten tokens, copied from `car-price-ml` rather than re-derived: the
+   spec describes what the portfolio already holds, and re-deriving a pinned value is how two
+   pages come to disagree about one. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --border: #e3e7ee;
+  --text: #1c2430;
+  --muted: #5b6472;
+  --accent: #2563eb;
+  /* 3.12:1 on --bg; #93c5fd was 1.80:1, under the 3:1 a non-text graphic needs. */
+  --accent-soft: #5b93e4;
+  /* Darker than the obvious #059669, which measures 3.5:1 on --surface - below AA for text
+     this size. */
+  --positive: #047857;
+  --warn: #b45309;
+  --danger: #b42318;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1319;
+    --surface: #161c25;
+    --border: #263041;
+    --text: #e6eaf2;
+    --muted: #98a3b6;
+    --accent: #6ea8fe;
+    --accent-soft: #4167a6;  /* 3.30:1 on the dark page; #2c4a7c was 2.11:1 */
+    --positive: #34d399;
+    --warn: #fbbf24;
+    --danger: #f87171;
+  }
+}
+  body { font: 16px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
          -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-         max-width: 820px; margin: 0 auto; padding: 32px 20px 56px; color: #1c2430; }
-  h1 { margin-bottom: 2px; font-weight: 700; letter-spacing: -0.01em; } .sub { color: #667085; margin-top: 0; }
+         max-width: 820px; margin: 0 auto; padding: 32px 20px 56px;
+         color: var(--text); background: var(--bg); }
+  .eyebrow { color: var(--muted); font-size: 0.78rem; letter-spacing: 0.08em;
+             text-transform: uppercase; margin: 0 0 6px; }
+  h1 { margin-bottom: 2px; font-weight: 700; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin-top: 0; }
   h2 { font-weight: 600; margin-top: 0; }
   h3 { font-weight: 600; font-size: 1rem; margin: 18px 0 6px; }
-  .card { border: 1px solid #e3e7ee; border-radius: 12px; padding: 18px 20px; margin: 18px 0; }
-  .status { border-left: 4px solid #d97706; background: #fffaf0; }
-  .correction { border-left: 4px solid #b42318; background: #fffbfa; }
+  .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin: 18px 0; }
+  /* The rail carries the state and the tint is gone. `#fffaf0` and `#fffbfa` were a fifth
+     shape under clause 1 — two grounds no house role names — and the pattern seven sibling
+     pages already use for a flagged card is a rail with no tint. A 4px one-sided border is
+     the "rail" shape `0007` §5 clause 1 names, so this is the house exception rather than a
+     new one. */
+  .status { border-left: 4px solid var(--warn); }
+  .correction { border-left: 4px solid var(--danger); }
+  .kpis { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; padding: 0; list-style: none; }
+  .kpi { flex: 1 1 150px; box-sizing: border-box; border: 1px solid var(--border);
+         border-radius: var(--radius); padding: 14px 16px; }
+  .kpi b { display: block; font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+  .kpi span { display: block; color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
   .table-wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
+  /* `--border`, not `--surface`: `#eef1f6` served both this separator and `code`'s ground on
+     this page, and a migration by value would have mapped them to one token. Six sibling
+     pages write the separator as `--border`; the two roles are pinned apart in
+     `tests/test_docs_page.py`. */
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
-  th { font-weight: 600; font-size: 0.85rem; color: #475467; }
-  tr.ours td { background: #f8fafc; font-weight: 600; }
-  code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
-  .ci { color: #667085; font-size: 0.85em; }
-  .note { color: #667085; font-size: 0.9rem; }
+  /* `--muted`, like every other secondary text on this page. `#475467` was this page's
+     *second* muted — one role under two values, which `0007` §4.1 counts as a divergence. */
+  th { font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+  /* And `#f8fafc` was its second surface. */
+  tr.ours td { background: var(--surface); font-weight: 600; }
+  /* `--surface`, the other of the two roles `#eef1f6` carried. The 4px is deliberately not
+     `--radius`: an inline code span is not a card. */
+  code { background: var(--surface); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  /* A figure this page has withdrawn, shown struck so a reader sees it is not a claim.
+     The provenance test exempts this shape by name: no artifact prints a number that
+     was wrong, and forbidding it would forbid the correction itself. */
+  s.withdrawn { color: var(--muted); }
+  .ci { color: var(--muted); font-size: 0.85em; }
+  .note { color: var(--muted); font-size: 0.9rem; }
   ul { padding-left: 1.1rem; } li { margin: 4px 0; }
-  footer { color: #667085; font-size: 0.85rem; margin-top: 24px; }
-  a { color: #2563eb; }
+  footer { color: var(--muted); font-size: 0.85rem; margin-top: 24px; }
+  a { color: var(--accent); }
 </style>
 </head>
 <body>
-<h1>pl-jobs-lora</h1>
-<p class="sub">A QLoRA fine-tune of a small Polish LLM that turns Polish IT job-posting prose into
-structured JSON — compared honestly against zero-shot and few-shot API baselines on accuracy,
-cost, and latency.</p>
+<p class="eyebrow">LLM extraction · QLoRA · evaluation</p>
+<h1>The best available model recovers 94% of what the input makes recoverable</h1>
+<p class="sub">A field scored 0.01 for <em>every</em> model, the frontier baseline included — which is
+usually not a measurement of the model. Searching the postings directly, with nothing model-shaped
+involved, puts the ceiling on recall at 0.28, and the best variant reaches 0.27 of it. A QLoRA
+fine-tune of a small Polish LLM that turns job-posting prose into structured JSON, compared against
+zero-shot and few-shot API baselines on accuracy, cost and latency.</p>
+
+<ul class="kpis">
+  <li class="kpi"><b>0.28</b><span>ceiling on recall for <code>tech_expected</code>, model-free</span></li>
+  <li class="kpi"><b>0.51</b><span>best field F1 — <code>claude-haiku-4-5</code>, few-shot</span></li>
+  <li class="kpi"><b>0.05</b><span>JSON validity, untuned base, zero-shot</span></li>
+  <li class="kpi"><b>142</b><span>gold postings in the frozen test set</span></li>
+</ul>
 
 <div class="card status">
   <h2>Status: in progress — baselines measured, fine-tune pending</h2>
@@ -58,10 +135,10 @@ cost, and latency.</p>
       <th>Variant</th><th>JSON valid</th><th>Field F1</th><th>95&nbsp;% CI</th>
       <th>Seniority F1</th><th>Tech F1</th><th>$ / 1k</th><th>p50 s</th>
     </tr>
-    <tr><td>few-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.51</td><td class="ci">0.47–0.54</td><td>0.62</td><td>0.28</td><td>4.47</td><td>2.3</td></tr>
-    <tr><td>zero-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.43</td><td class="ci">0.39–0.47</td><td>0.44</td><td>0.26</td><td>3.34</td><td>2.5</td></tr>
-    <tr><td>base, few-shot (Bielik-1.5B, CPU)</td><td>0.80</td><td>0.30</td><td class="ci">0.27–0.34</td><td>0.25</td><td>0.12</td><td>–</td><td>21.4</td></tr>
-    <tr><td>base, zero-shot (Bielik-1.5B, CPU)</td><td>0.05</td><td>0.04</td><td class="ci">0.01–0.07</td><td>0.07</td><td>0.01</td><td>–</td><td>67.9</td></tr>
+    <tr><td>few-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.51</td><td class="ci">0.47–0.54</td><td>0.62</td><td>0.28</td><td>4.47</td><td>2.25</td></tr>
+    <tr><td>zero-shot API (claude-haiku-4-5)</td><td>1.00</td><td>0.43</td><td class="ci">0.39–0.47</td><td>0.44</td><td>0.26</td><td>3.34</td><td>2.47</td></tr>
+    <tr><td>base, few-shot (Bielik-1.5B, CPU)</td><td>0.80</td><td>0.30</td><td class="ci">0.27–0.34</td><td>0.25</td><td>0.12</td><td>–</td><td>21.43</td></tr>
+    <tr><td>base, zero-shot (Bielik-1.5B, CPU)</td><td>0.05</td><td>0.04</td><td class="ci">0.01–0.07</td><td>0.07</td><td>0.01</td><td>–</td><td>67.90</td></tr>
     <tr class="ours"><td>QLoRA (ours)</td><td>–</td><td>–</td><td class="ci">–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
   </table>
   </div>
@@ -81,7 +158,7 @@ cost, and latency.</p>
     object. Few-shot recovers most of that (0.80), which is the gap the fine-tune targets.</li>
     <li>The frontier baseline is not near-perfect either: <strong>0.51 field F1</strong>. Part of that is a
     genuinely hard task and part of it is a ceiling in the data — see below.</li>
-    <li>Latency is where the local side already loses badly on CPU — 21&nbsp;s versus 2.3&nbsp;s per posting.</li>
+    <li>Latency is where the local side already loses badly on CPU — 21.43&nbsp;s versus 2.25&nbsp;s per posting.</li>
   </ul>
 </div>
 
@@ -93,8 +170,8 @@ cost, and latency.</p>
   <div class="table-wrap">
   <table>
     <tr><th>Field</th><th>Gold terms</th><th>Present in the prose</th><th>Ceiling on recall</th><th>Postings where none appear</th></tr>
-    <tr><td>tech_expected</td><td>542</td><td>153</td><td>0.28</td><td>41 / 115 (36&nbsp;%)</td></tr>
-    <tr><td>tech_optional</td><td>154</td><td>20</td><td>0.13</td><td>40 / 53 (75&nbsp;%)</td></tr>
+    <tr><td>tech_expected</td><td>542</td><td>153</td><td>0.28</td><td>41 of 115 (0.36)</td></tr>
+    <tr><td>tech_optional</td><td>154</td><td>20</td><td>0.13</td><td>40 of 53 (0.75)</td></tr>
   </table>
   </div>
   <p>The gold technology labels come from the platform's structured widget, and the leakage guard strips
@@ -116,13 +193,13 @@ cost, and latency.</p>
   <h2>Correction: the salary numbers published before 2026-08-18 were wrong</h2>
   <p>The scorer credited a prediction for matching <code>None</code> against <code>None</code>, and
   <strong>107 of the 142 gold records carry no salary</strong>. A model that emitted nothing therefore
-  inherited that base rate. The published table showed the zero-shot base at <strong>0.75 / 0.87 / 0.74
-  on salary while it produced valid JSON 4.9&nbsp;% of the time</strong> — that column was measuring how often
+  inherited that base rate. The published table showed the zero-shot base at <s class="withdrawn">0.75 / 0.87 / 0.74
+  on salary while it produced valid JSON 4.9&nbsp;% of the time</s> — that column was measuring how often
   postings omit pay, not accuracy.</p>
   <p>Salary is now split into a <strong>detection</strong> decision (present vs absent, over all records) and
   <strong>value accuracy</strong> over only the 35 records that actually have a salary. The corrected picture is
-  far worse and far more useful: even the frontier baseline recovers the currency on 23&nbsp;% of the
-  salaries present, the arrangement on 11&nbsp;%, and the amount bounds on <strong>6&nbsp;%</strong>. Salary is
+  far worse and far more useful: even the frontier baseline recovers the currency at 0.23 of the
+  salaries present, the arrangement at 0.11, and the amount bounds at <strong>0.06</strong>. Salary is
   the weakest part of this task by a wide margin, and the old metric hid that completely.</p>
   <p class="note">The same defect reached the base-model probe, whose ADR reported 0.74&nbsp;/&nbsp;0.96&nbsp;/&nbsp;0.74
   on salary for a variant emitting valid JSON <em>0&nbsp;%</em> of the time. Both tables were regenerated from
@@ -135,7 +212,7 @@ cost, and latency.</p>
   <ul>
     <li><strong>An own dataset, not an off-the-shelf one.</strong> The training data is built from the
     sibling project <a href="https://github.com/P0w3r223/it-job-radar">it-job-radar</a>: 800 offers
-    fetched, 710 kept after deduplication, split 568&nbsp;/&nbsp;142 <em>by publication date</em> — never
+    fetched, 710 kept after deduplication, with 142 held out <em>by publication date</em> — never
     randomly, so the test set is genuinely the future. The input is the posting prose; the labels are
     triangulated from the platform's structured fields, an LLM reading only the prose, and human
     adjudication of the disagreements.</li>
