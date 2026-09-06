@@ -242,10 +242,10 @@ toggled) drop in from the hosted GPU (S5) below.
 
 | variant | cov | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary detect | salary cur/kind/amt | field F1 | $/1k | p50 s | p95 s |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.30 | – | 21.4 | 103.0 |
+| bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.30 | – | 21.43 | 103.02 |
 | bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.04 | – | 67.9 | 102.6 |
 | claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.43 | 3.34 | 2.5 | 4.7 |
-| claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.51** | 4.47 | 2.3 | 4.1 |
+| claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.51** | 4.47 | 2.25 | 4.13 |
 | bielik-1.5b__zero (base, HF 4-bit) | – | – | – | – | – | – | – | – | – | – | – |
 | **bielik-1.5b-lora__zero (QLoRA, ours)** | – | – | – | – | – | – | – | – | – | – | – |
 
@@ -258,8 +258,8 @@ Polish-quirk-aware), so the comparison is fair rather than penalizing paraphrase
 
 The earlier scorer credited `None == None`, and **107 of 142 gold records carry no salary**. A model
 emitting nothing at all therefore inherited that base rate: the previous table reported
-`bielik-1.5b-gguf__zero` at **0.75/0.87/0.74 on salary while producing valid JSON 4.9 % of the
-time**. That number measured the prevalence of missing salaries, not accuracy.
+`bielik-1.5b-gguf__zero` at ~~**0.75/0.87/0.74 on salary while producing valid JSON 4.9 % of the
+time**~~. That number measured the prevalence of missing salaries, not accuracy.
 
 The metric is now split, and both halves are denominated honestly:
 
@@ -269,7 +269,7 @@ The metric is now split, and both halves are denominated honestly:
   nothing earns nothing.
 
 The corrected picture is much worse and much more informative: even the frontier baseline recovers
-the currency on 23 % of the salaries present, the arrangement on 11 %, and the amount bounds on
+the currency on 0.23 of the salaries present, the arrangement on 0.11, and the amount bounds on
 **6 %**. Salary extraction is the weakest part of this task by a wide margin, which the old metric
 hid entirely. The same fix applies to set-valued fields — empty-vs-empty no longer counts as an
 exact match, and a field with no support renders `-` rather than a perfect score. Regression tests
@@ -283,7 +283,7 @@ clause of the rationale was wrong and is struck. Details in
 [ADR-0001](docs/decisions/0001-base-model-selection.md#amendment-2026-08-21--the-salary-columns-were-measuring-label-sparsity).
 
 Zero-shot base confirms the ADR-0001 probe finding at full scale (0.05 valid vs 0.80 few-shot).
-Per-field accuracy stays weak (0.23 field F1 few-shot), which is the gap QLoRA (S5) targets.
+Per-field accuracy stays weak (0.30 field F1 few-shot), which is the gap QLoRA (S5) targets.
 
 ### Why a variant failed, not just how often
 
