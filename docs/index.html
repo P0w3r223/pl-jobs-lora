@@ -17,7 +17,7 @@
   .card { border: 1px solid #e3e7ee; border-radius: 12px; padding: 18px 20px; margin: 18px 0; }
   .status { border-left: 4px solid #d97706; background: #fffaf0; }
   .correction { border-left: 4px solid #b42318; background: #fffbfa; }
-  .tablewrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
@@ -52,7 +52,7 @@ cost, and latency.</p>
   <p>Every variant is scored by the same model-free harness on the same frozen 142-posting test set,
   per field. Both sides are normalized through the vendored <code>it-job-radar</code> functions, so
   paraphrases (<code>ReactJS</code> vs <code>react</code>) are not penalized.</p>
-  <div class="tablewrap">
+  <div class="table-wrap">
   <table>
     <tr>
       <th>Variant</th><th>JSON valid</th><th>Field F1</th><th>95&nbsp;% CI</th>
@@ -90,7 +90,7 @@ cost, and latency.</p>
   <p>The <code>tech_optional</code> field scored 0.01–0.02 for <em>every</em> model, the frontier baseline
   included. A metric on which the best available model does no better than the worst is usually not
   measuring the model — and it wasn't. Searching the postings directly, with no model involved:</p>
-  <div class="tablewrap">
+  <div class="table-wrap">
   <table>
     <tr><th>Field</th><th>Gold terms</th><th>Present in the prose</th><th>Ceiling on recall</th><th>Postings where none appear</th></tr>
     <tr><td>tech_expected</td><td>542</td><td>153</td><td>0.28</td><td>41 / 115 (36&nbsp;%)</td></tr>
