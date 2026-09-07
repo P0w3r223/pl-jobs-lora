@@ -2,7 +2,7 @@
 
 Date: 2026-07-27
 Status: accepted (PASS)
-Author: P0w3r223
+Author: Piotr Cząstkiewicz
 Related to: docs/decisions/0002-dataset-and-labeling.md
 
 ---
