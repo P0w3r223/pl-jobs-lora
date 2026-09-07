@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "QLoRA fine-tune of a small Polish LLM that structures Polish IT job-posting prose into JSON, compared honestly against zero-/few-shot API baselines on accuracy x cost x latency."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["qlora", "peft", "fine-tuning", "polish-nlp", "structured-extraction"]
 # LOCAL half of the dependency split (ADR-0004): everything needed to build the dataset,
 # score predictions, and run the base-model probe on CPU. The GPU/Linux training stack

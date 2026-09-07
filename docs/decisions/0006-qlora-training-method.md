@@ -2,7 +2,7 @@
 
 Date: 2026-07-28
 Status: accepted
-Author: P0w3r223
+Author: Piotr Cząstkiewicz
 Related to: docs/decisions/0001-base-model-selection.md, 0003-evaluation-methodology.md,
             0004-training-infra.md
 
