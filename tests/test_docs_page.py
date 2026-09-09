@@ -59,7 +59,6 @@ STRUCK = {"0.75", "0.87", "0.74", "4.9"}
 #: allowed values goes stale in silence, which is what `0007` §5.0 sentence 2 is about.
 _NOT_A_RESULT = (
     (r"\b(?:19|20)\d{2}-\d{2}-\d{2}\b", "a date is a fact about a run, not a cell of one"),
-    (r"\b[AP]\d\b", "the portfolio's own ranking codes"),
     # A model's name is an identifier. `Qwen2.5-1.5B` reads as the figures 2.5 and 1.5,
     # and `claude-haiku-4-5` as 4 and 5 - none of them a measurement of anything.
     (r"\b(?:Qwen|Bielik|Llama|Mistral)[\w.-]*", "a model name carries version digits"),
