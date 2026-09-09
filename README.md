@@ -3,7 +3,7 @@
 **A QLoRA fine-tune of a small Polish LLM that turns Polish IT job-posting prose into structured
 JSON — compared honestly against zero-shot / few-shot API baselines on accuracy × cost × latency.**
 
-Portfolio project **P4** (stage 2). Given the free-text of a Polish IT job posting, the model
+Portfolio project (stage 2). Given the free-text of a Polish IT job posting, the model
 extracts a structured record — seniority, required/optional technologies, work mode, and salary —
 as validated JSON. The dataset is **built from the sibling project [`it-job-radar`](https://github.com/P0w3r223/it-job-radar)**,
 labeled with a triangulated QA loop, and every model variant is scored by one shared harness. The
