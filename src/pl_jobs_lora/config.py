@@ -1,6 +1,6 @@
 """Configuration: YAML → frozen dataclasses. No I/O beyond reading the config file.
 
-Mirrors the P1 mlops-car-price pattern — every knob (model candidates, probe decoding,
+Mirrors the mlops-car-price pattern — every knob (model candidates, probe decoding,
 dataset size, HF repos, tracking) lives in configs/config.yaml, loaded once into immutable
 dataclasses so nothing is hardcoded and invalid states are caught at load time.
 """

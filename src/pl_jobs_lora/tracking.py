@@ -1,6 +1,6 @@
 """MLflow tracking wiring — one place that decides where runs are logged (ADR-0004).
 
-The hosted MLflow endpoint (DagsHub, for parity with P1 mlops-car-price) is supplied at
+The hosted MLflow endpoint (DagsHub, for parity with mlops-car-price) is supplied at
 runtime via the ``MLFLOW_TRACKING_URI`` env var, which wins over the config value. That way
 the same code logs to a local file store during development and to the hosted tracker from
 the hosted GPU, with no code change. ``mlflow`` is imported lazily so the rest of the package
