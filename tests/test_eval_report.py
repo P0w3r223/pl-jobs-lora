@@ -9,7 +9,120 @@ import json
 from pathlib import Path
 
 from pl_jobs_lora.eval import scoring
-from pl_jobs_lora.eval.report import build_report, score_variant, tally_failures
+from pl_jobs_lora.eval.bootstrap import BootstrapReport, Interval, PairedDifference
+from pl_jobs_lora.eval.ceiling import FieldCeiling
+from pl_jobs_lora.eval.report import (
+    ComparisonReport,
+    VariantReport,
+    build_report,
+    score_variant,
+    tally_failures,
+)
+
+_RESULTS = Path(__file__).resolve().parents[1] / "results" / "eval"
+
+
+def _variant(name: str, recall: float | None) -> VariantReport:
+    return VariantReport(
+        variant=name, mean_field_f1=None, usd_per_1k_postings=None,
+        scores={"coverage": 1.0, "n_duplicate_rows": 0,
+                "fields": {"tech_expected": {"recall": recall}}},
+    )
+
+
+def test_best_recall_takes_the_highest_and_refuses_to_invent_one():
+    """The `None`-filter decides what a ceiling is compared against, and nothing called it.
+
+    Three branches, and the middle one is the finding: a variant that did not score the field
+    must not count as a zero, because the page holds the answer against a model-free ceiling
+    and a zero there reads as *the models cannot do this*.
+    """
+    report = ComparisonReport(
+        metadata={}, variants=[_variant("a", 0.30), _variant("b", 0.51), _variant("c", None)])
+    assert report.best_recall("tech_expected") == 0.51
+    assert report.best_recall("salary") is None                      # no variant scored it
+    assert ComparisonReport(metadata={}, variants=[_variant("c", None)]) \
+        .best_recall("tech_expected") is None                        # all None is not 0.0
+
+
+def test_the_two_serialisers_keep_their_none_branches():
+    """`as_dict` on both is a pure function with a `None` arm, and the arm is the untested half."""
+    empty = FieldCeiling(field="salary", terms=0, present=0,
+                         records_with_gold=0, records_unanswerable=0)
+    assert empty.as_dict()["share"] is None
+    assert empty.as_dict()["unanswerable_share"] is None
+
+    unmeasurable = PairedDifference(
+        variant="v", reference="r", metric="mean_field_f1",
+        difference=Interval(point=None, low=None, high=None),
+        sign_agreement=0.5, comparable=False)
+    assert unmeasurable.as_dict()["separated"] is False
+    assert unmeasurable.as_dict()["difference"]["point"] is None
+
+
+def _rebuild(committed: dict) -> ComparisonReport:
+    """The committed JSON, back into the objects that wrote it.
+
+    Written out rather than imported because the modules have no `from_dict`: the report is
+    written once and read by a human, so nothing ever needed to parse it back. That is exactly
+    why this test exists — see the one below.
+    """
+    def interval(raw: dict) -> Interval:
+        return Interval(point=raw["point"], low=raw["low"], high=raw["high"])
+
+    boot = committed["bootstrap"]
+    return ComparisonReport(
+        metadata=committed["metadata"],
+        variants=[VariantReport(**raw) for raw in committed["variants"]],
+        bootstrap=BootstrapReport(
+            n_gold=boot["n_gold"], resamples=boot["resamples"], seed=boot["seed"],
+            ci=boot["ci"], reference=boot["reference"], coverage=boot["coverage"],
+            intervals={name: {metric: interval(raw) for metric, raw in metrics.items()}
+                       for name, metrics in boot["intervals"].items()},
+            paired=[PairedDifference(
+                variant=p["variant"], reference=p["reference"], metric=p["metric"],
+                difference=interval(p["difference"]), sign_agreement=p["sign_agreement"],
+                comparable=p["comparable"]) for p in boot["paired"]],
+        ),
+        ceilings={field: FieldCeiling(
+            field=raw["field"], terms=raw["terms"], present=raw["present"],
+            records_with_gold=raw["records_with_gold"],
+            records_unanswerable=raw["records_unanswerable"])
+            for field, raw in committed["ceilings"].items()},
+    )
+
+
+def test_the_committed_report_md_is_what_the_committed_report_json_renders():
+    """The carrier for the artifact the published page stands on.
+
+    The chain the page depends on ran **page -> `report.md` -> nothing**: `test_docs_page.py`
+    opens both committed files as the source of truth the page is checked against, never as
+    artifacts to validate, and `tests/test_eval_report.py` built synthetic reports in
+    `tmp_path` while `write_report` was never called by the suite at all. So a hand-edited
+    figure in `report.md` would have moved the page's own check with it.
+
+    This closes the loop without regenerating anything: rebuild the report from the committed
+    JSON, render it, and require the bytes the repository ships.
+
+    **Its scope, measured rather than claimed.** A mutation battery over this guard says:
+    editing a figure in `report.md` reddens it; editing the same figure in `report.json`
+    reddens it **where the markdown prints that figure at the precision that changed** —
+    `mean_field_f1` 0.3029 -> 0.4029 does, because the table shows `0.30`; 0.0426 -> 0.0425
+    does **not**, because it still shows `0.04`. The JSON carries four decimals and the table
+    two, so the last two digits of a figure are outside any guard this repository can hold:
+    proving them would mean recomputing from `results/eval/predictions/`, which is gitignored.
+    `ADR-0004` draws the same boundary in the index, and the round-trip assertion above is
+    about the serialisers rather than about the figures — it catches a key the rebuild drops
+    or a rounding the writer applies, not a digit somebody changed.
+    """
+    committed = json.loads((_RESULTS / "report.json").read_text(encoding="utf-8"))
+    rebuilt = _rebuild(committed)
+
+    assert rebuilt.as_dict() == committed, "report.json does not round-trip through its own objects"
+    assert rebuilt.render_markdown() == (_RESULTS / "report.md").read_text(encoding="utf-8"), (
+        "results/eval/report.md is not what results/eval/report.json renders -- one of the two "
+        "was edited by hand, and the page is checked against both")
+
 
 _PRICING = {"input_usd_per_mtok": 1.0, "output_usd_per_mtok": 5.0}
 _PCTL = (50, 95)

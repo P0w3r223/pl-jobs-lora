@@ -148,6 +148,10 @@ def load_config(path: Path | None = None) -> Config:
     eval_raw = dict(raw["eval"])
     eval_raw["shot_modes"] = tuple(eval_raw["shot_modes"])
     eval_raw["latency_percentiles"] = tuple(eval_raw["latency_percentiles"])
+    probe_cfg = ProbeConfig(**probe_raw)
+    _validate_probe(probe_cfg)
+    data_cfg = DataConfig(**raw["data"])
+    _validate_data(data_cfg)
     eval_cfg = EvalConfig(**eval_raw)
     _validate_eval(eval_cfg)
     train_cfg = TrainConfig(**raw["train"])
@@ -156,8 +160,8 @@ def load_config(path: Path | None = None) -> Config:
     _validate_labeling_qa(labeling_qa, candidates)
     return Config(
         models=candidates,
-        probe=ProbeConfig(**probe_raw),
-        data=DataConfig(**raw["data"]),
+        probe=probe_cfg,
+        data=data_cfg,
         hf=HfConfig(**raw["hf"]),
         tracking=TrackingConfig(**raw["tracking"]),
         collection=CollectionConfig(**raw["collection"]),
@@ -190,6 +194,42 @@ def _validate_train(cfg: TrainConfig, candidates: tuple[ModelCandidate, ...]) ->
         raise ValueError("train.max_seq_len must be positive.")
     if not 0.0 < cfg.dev_fraction < 1.0:
         raise ValueError("train.dev_fraction must be within (0, 1).")
+
+
+def _validate_probe(cfg: ProbeConfig) -> None:
+    """Fail fast on probe knobs, because ``dev_slice_size`` becomes a divisor.
+
+    ``_spread_sample``'s ``step = max(1, len(urls) // n)`` divides by it, so a ``0`` here used
+    to surface as ``ZeroDivisionError`` from inside the collector rather than as a
+    configuration error at load. ``good-practices.md`` §2 asks the boundary to refuse it, and
+    this file already did so for three of its five sections.
+    """
+    if cfg.dev_slice_size <= 0:
+        raise ValueError("probe.dev_slice_size must be positive — it is a sample size.")
+    if cfg.temperature < 0:
+        raise ValueError("probe.temperature must be non-negative.")
+    if cfg.max_tokens <= 0:
+        raise ValueError("probe.max_tokens must be positive.")
+    if cfg.few_shot_examples < 0:
+        raise ValueError("probe.few_shot_examples must be non-negative.")
+    if cfg.context_tokens <= 0:
+        raise ValueError("probe.context_tokens must be positive.")
+    if not 0 <= cfg.context_margin_tokens < cfg.context_tokens:
+        raise ValueError("probe.context_margin_tokens must leave room inside context_tokens.")
+    unknown = set(cfg.shot_modes) - {"zero", "few"}
+    if unknown:
+        raise ValueError(f"probe.shot_modes must be a subset of {{zero, few}}, got {unknown}.")
+
+
+def _validate_data(cfg: DataConfig) -> None:
+    """Fail fast on the dataset knobs; ``sitemap_offers_sample`` is the collector's other
+    divisor."""
+    if cfg.sitemap_offers_sample <= 0:
+        raise ValueError("data.sitemap_offers_sample must be positive — it is a sample size.")
+    if not 0.0 < cfg.test_fraction < 1.0:
+        raise ValueError("data.test_fraction must be within (0, 1).")
+    if cfg.min_prose_chars <= 0:
+        raise ValueError("data.min_prose_chars must be positive.")
 
 
 def _validate_eval(cfg: EvalConfig) -> None:

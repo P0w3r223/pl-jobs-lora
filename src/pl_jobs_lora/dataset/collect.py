@@ -181,10 +181,21 @@ def _spread_sample(urls: list[str], n: int) -> list[str]:
 
 def _fetch_examples(
     cfg: Config, session: requests.Session, urls: list[str], alias_index: dict[str, str]
-) -> list[DevExample]:
+) -> tuple[list[DevExample], dict]:
     """Throttled fetch of each offer URL -> DevExample (prose + gold), skipping the unusable.
-    Raw HTML is never persisted; only prose-derived fields survive the loop."""
+
+    Raw HTML is never persisted; only prose-derived fields survive the loop. Returns the
+    examples **and a breakdown of what was dropped and why**, in the shape ``build_dataset``
+    already returns for the filtering stage.
+
+    The loop is right to drop a bad URL and the breakdown is why that is not silence: a
+    request that failed and a page the parser could not use are different facts about the
+    collection, and the run used to emit one number covering both. ``good-practices.md`` §3 is
+    the rule — never swallow an error without recording it — and the remedy it asks for here
+    is a counter rather than a raise, because the caller cannot act on a single dead URL.
+    """
     out: list[DevExample] = []
+    stats = {"requested": len(urls), "fetch_failed": 0, "unusable_page": 0, "usable": 0}
     for url in urls:
         try:
             resp = session.get(url, timeout=cfg.collection.request_timeout_s)
@@ -192,19 +203,30 @@ def _fetch_examples(
             ex = parse_offer_page(resp.text, alias_index)
             if ex:
                 out.append(DevExample(**{**asdict(ex), "url": url}))
+            else:
+                stats["unusable_page"] += 1
         except requests.RequestException:
+            stats["fetch_failed"] += 1
             continue
         finally:
             time.sleep(cfg.collection.request_delay_s)
-    return out
+    stats["usable"] = len(out)
+    return out, stats
+
+
+def _collect_line(stats: dict) -> str:
+    """The one line a collection run prints, with the drops named rather than implied."""
+    return (f"[collect] {stats['requested']} urls -> {stats['usable']} usable "
+            f"({stats['fetch_failed']} fetch failed, "
+            f"{stats['unusable_page']} unusable page)")
 
 
 def collect_dev_slice(cfg: Config, alias_index: dict[str, str]) -> list[DevExample]:
     """Fetch the small probe slice (``probe.dev_slice_size``) with prose + gold (ADR-0001)."""
     session = _session(cfg)
     urls = _spread_sample(fetch_sitemap_urls(cfg, session), cfg.probe.dev_slice_size)
-    out = _fetch_examples(cfg, session, urls, alias_index)
-    print(f"[collect] {len(urls)} urls -> {len(out)} usable")
+    out, stats = _fetch_examples(cfg, session, urls, alias_index)
+    print(_collect_line(stats))
     return out
 
 
@@ -219,6 +241,6 @@ def collect_dataset(
     session = _session(cfg)
     n = limit or cfg.data.sitemap_offers_sample
     urls = _spread_sample(fetch_sitemap_urls(cfg, session), n)
-    out = _fetch_examples(cfg, session, urls, alias_index)
-    print(f"[collect] {len(urls)} urls -> {len(out)} usable")
+    out, stats = _fetch_examples(cfg, session, urls, alias_index)
+    print(_collect_line(stats))
     return out

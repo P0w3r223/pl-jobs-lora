@@ -1,6 +1,7 @@
 """The published page — and the rules the index checker structurally cannot carry.
 
-`ADR-0004` (in the private index) puts one checker over all twelve published surfaces and
+`ADR-0004` (in the portfolio index, `P0w3r223/portfolio-index`) puts one checker over all
+twelve published surfaces and
 assertions in the repositories that have a page test. This repository had none, and S4 needs
 one for a reason that is not convenience: **the checker reads a page's HTML and its CSS, and
 cannot see this repository's artifacts.** So the two rules S4 is actually about are invisible
@@ -36,7 +37,8 @@ ARTIFACTS = (
     Path("results/eval/report.json"),
     # Two ADRs, named as sources rather than left as an exception. `results/probe/` is
     # gitignored, so the base-model probe's figures exist only in the ADR that recorded them,
-    # and the corpus counts likewise. `ADR-0012` admits a committed non-generated source when
+    # and the corpus counts likewise. `apply-scout`'s `ADR-0012` admits a committed
+    # non-generated source when
     # the page's artifact set names it - and naming it is what makes the alternative visible:
     # version `results/probe/` and the first of these two comes off this list.
     Path("docs/decisions/0001-base-model-selection.md"),
@@ -189,7 +191,7 @@ TILE_SOURCES = (
 
 
 def test_every_figure_the_page_prints_is_one_a_committed_artifact_prints():
-    """`ADR-0012`, and `0007` §5.0. The page quotes; it never retypes.
+    """`apply-scout`'s `ADR-0012`, and the index's `0007` §5.0. The page quotes; it never retypes.
 
     Before S4 this page printed `2.3`, `21.4` and `67.9` where `results/eval/report.md` prints
     `2.25`, `21.43` and `67.90` — rounded numbers, which are new numbers no reader can check.
