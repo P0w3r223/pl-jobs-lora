@@ -6,9 +6,13 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from pl_jobs_lora.config import (
+    DataConfig,
     LabelingQaConfig,
+    ProbeConfig,
     TrainConfig,
+    _validate_data,
     _validate_labeling_qa,
+    _validate_probe,
     _validate_train,
     load_config,
 )
@@ -22,6 +26,60 @@ def test_config_loads_candidates_and_probe():
     assert {"qwen2.5-1.5b", "bielik-1.5b"} <= keys
     assert cfg.probe.temperature == 0.0  # greedy — base model is the only variable
     assert cfg.probe.dev_slice_size > 0
+
+
+def _valid_probe(**overrides) -> ProbeConfig:
+    base = dict(
+        dev_slice_size=25, temperature=0.0, max_tokens=2048, few_shot_examples=2,
+        context_tokens=8192, context_margin_tokens=128, shot_modes=("zero", "few"),
+    )
+    return ProbeConfig(**{**base, **overrides})
+
+
+def _valid_data(**overrides) -> DataConfig:
+    base = dict(
+        sitemap_offers_sample=800, test_fraction=0.2, min_prose_chars=200,
+        hf_dataset_repo="example/dataset",
+    )
+    return DataConfig(**{**base, **overrides})
+
+
+def test_the_two_sample_sizes_that_become_a_divisor_are_refused_at_load():
+    """`_spread_sample` divides by both, so a zero here used to crash inside the collector.
+
+    `probe.dev_slice_size` and `data.sitemap_offers_sample` are the two knobs that reach
+    `step = max(1, len(urls) // n)`. Before these validators a `0` in `configs/config.yaml`
+    surfaced as `ZeroDivisionError` from the network half of `dataset/collect.py`, which is a
+    configuration error arriving as a crash three modules away — `good-practices.md` §2 asks
+    the boundary to refuse it instead.
+    """
+    with pytest.raises(ValueError, match="dev_slice_size"):
+        _validate_probe(_valid_probe(dev_slice_size=0))
+    with pytest.raises(ValueError, match="sitemap_offers_sample"):
+        _validate_data(_valid_data(sitemap_offers_sample=0))
+
+
+def test_the_probe_validator_holds_the_rest_of_its_block():
+    for bad in (dict(temperature=-0.1), dict(max_tokens=0), dict(few_shot_examples=-1),
+                dict(context_tokens=0), dict(context_margin_tokens=8192),
+                dict(shot_modes=("zero", "many"))):
+        with pytest.raises(ValueError):
+            _validate_probe(_valid_probe(**bad))
+    _validate_probe(_valid_probe())  # the positive control: the shipped shape passes
+
+
+def test_the_data_validator_holds_the_rest_of_its_block():
+    for bad in (dict(test_fraction=0.0), dict(test_fraction=1.0), dict(min_prose_chars=0)):
+        with pytest.raises(ValueError):
+            _validate_data(_valid_data(**bad))
+    _validate_data(_valid_data())
+
+
+def test_the_shipped_config_passes_both_new_validators():
+    """Load is the assertion: `load_config` calls them, so this fails if the file drifts."""
+    cfg = load_config()
+    assert cfg.probe.dev_slice_size > 0
+    assert cfg.data.sitemap_offers_sample > 0
 
 
 def test_config_is_frozen():
