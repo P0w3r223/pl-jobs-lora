@@ -115,11 +115,13 @@ figures `ADR-0002`, `configs/config.yaml` and `results/eval/report.json` carry. 
 salary is **31%**, which `ADR-0006` records and which is honestly sparse: it is often absent from the
 posting.
 
-*The fetch count, the reposts deduplicated and the per-field coverage are printed by
-`data/processed/manifest.json`, which the build writes and `.gitignore` keeps local — so they are
-not figures this README can source, and they were removed rather than corrected. A hand-typed
-figure with no instrument beside it only sets the next staleness date; the run itself now prints
-its drops, which is the other half of the same repair.* Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
+*The per-field coverage is printed by nothing committed and was removed rather than corrected;
+the fetch and dedupe counts are in `data/processed/manifest.json`, which the build writes and
+`.gitignore` keeps local. A hand-typed figure with no instrument beside it only sets the next
+staleness date, and the collection run itself now prints its drops — the other half of the same
+repair. `dataset_manifest()` writes `collected`, `passed_filters`, `dropped_filters`,
+`dropped_duplicates` and `records`; coverage is not among them, which the first edition of this
+paragraph said it was.* Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
 by the **dedupe-before-split** ordering: train and test share **no offer id** and **no prose hash**.
 The temporal cut is by publication date (train older, test newest); in this build it falls cleanly
 between two postings ~14 min apart.

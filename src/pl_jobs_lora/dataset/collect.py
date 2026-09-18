@@ -238,6 +238,13 @@ def collect_dataset(
     Size is ``data.sitemap_offers_sample`` (~800); ``limit`` caps it for a smoke run. This is
     the collection whose prose-derived output is frozen for the dataset — collect once, replay
     thereafter (ADR-0002); raw HTML never leaves the machine."""
+    if limit < 0:
+        # **The third path to `_spread_sample`'s divisor**, and the one the validators cannot
+        # see: `limit` comes from `--limit` rather than from the config. `0` is documented as
+        # *full* and is masked by the `or` below; a negative silently collects `len(urls) - 1`
+        # offers against a live site. Found by the review of the pull request that validated
+        # the other two paths and called them "the two knobs".
+        raise ValueError(f"--limit must not be negative, got {limit}.")
     session = _session(cfg)
     n = limit or cfg.data.sitemap_offers_sample
     urls = _spread_sample(fetch_sitemap_urls(cfg, session), n)
