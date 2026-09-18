@@ -6,7 +6,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
-# Virtual env (local only; Colab deps live in requirements-train.txt)
+# Virtual env (local only; hosted-GPU deps live in requirements-train.txt)
 .venv/
 
 # Secrets / config
@@ -29,13 +29,16 @@ data/models/
 data/probe_slice.json
 results/probe/
 
-# S2 dataset: collected slice (replayed) + processed train/test — frozen on HF Hub, not git.
+# S2 dataset: collected slice (replayed) + processed train/test — local until the Hub repo
+# is provisioned (ADR-0004; `--push` is deferred), never git.
 data/dataset_slice.json
 data/processed/
 data/*.log
 
 # S3 labeling QA (ADR-0005): proposals (replayed), the review queue + human gold (may echo prose)
-# are never committed — only the numbers-only report.{json,md} under results/labeling_qa/ is versioned.
+# are never committed. The numbers-only report.{json,md} may be versioned when S3 produces one;
+# nothing under results/labeling_qa/ is tracked today, and the sentence that said otherwise was
+# true of results/eval/ instead.
 results/labeling_qa/proposals.jsonl
 results/labeling_qa/review_queue.jsonl
 results/labeling_qa/human_gold.jsonl

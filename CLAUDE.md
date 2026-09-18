@@ -46,7 +46,8 @@ docs/decisions/           # ADRs
 - **The hosted GPU is Kaggle, not Colab.** ADR-0004 originally said "free Colab/Kaggle" and the
   notebook implemented Colab; its 2026-08-21 amendment records why that failed and what replaced
   it. `notebooks/train_qlora.ipynb` imports `kaggle_secrets`, and `train/qlora.py` says so in its
-  first line. Anything written for Colab is written for the wrong platform.
+  first line. Anything written for Colab is written for the wrong platform — ADR-0004's
+  amendment abandoned it on 2026-08-04.
 - **Normalize before scoring.** Predictions and gold both pass through `normalize.py` so
   `ReactJS` vs `react` and the Polish `regular` → mid quirk are matches, not errors (ADR-0003).
 - **The scorer is pure.** `(predictions, gold) → scores`, model-free and offline. Each variant

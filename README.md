@@ -110,10 +110,16 @@ The collected slice and processed `data/processed/{train,test}.jsonl` + `manifes
 is provisioned. Everything downstream replays this frozen dataset — collect once, never re-scrape
 (offers expire).
 
-The current build: **800 offers fetched → 710 records** (90 reposts deduplicated by id and prose
-hash), split **568 train / 142 test** by publication date. Label coverage: title & work-mode 100%,
-seniority 99%, expected-tech 76%, salary 31% (salary is honestly sparse — often absent from the
-posting). Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
+The current build: **710 records**, split **568 train / 142 test** by publication date — the three
+figures `ADR-0002`, `configs/config.yaml` and `results/eval/report.json` carry. Label coverage for
+salary is **31%**, which `ADR-0006` records and which is honestly sparse: it is often absent from the
+posting.
+
+*The fetch count, the reposts deduplicated and the per-field coverage are printed by
+`data/processed/manifest.json`, which the build writes and `.gitignore` keeps local — so they are
+not figures this README can source, and they were removed rather than corrected. A hand-typed
+figure with no instrument beside it only sets the next staleness date; the run itself now prints
+its drops, which is the other half of the same repair.* Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
 by the **dedupe-before-split** ordering: train and test share **no offer id** and **no prose hash**.
 The temporal cut is by publication date (train older, test newest); in this build it falls cleanly
 between two postings ~14 min apart.
@@ -197,7 +203,7 @@ Training needs a **Linux GPU** (bitsandbytes has no Windows/CPU build, and the l
 Pascal), so it runs on a free **Kaggle** T4 via
 [`notebooks/train_qlora.ipynb`](notebooks/train_qlora.ipynb); the GPU stack lives in
 `requirements-train.txt` and is installed **only there** (ADR-0004 and its 2026-08-21 amendment,
-which records why Colab was dropped). The whole repo is driven from the notebook — it only invokes
+which records why Colab was abandoned). The whole repo is driven from the notebook — it only invokes
 these scripts:
 
 ```bash
@@ -243,8 +249,8 @@ toggled) drop in from the hosted GPU (S5) below.
 | variant | cov | JSON valid | seniority F1 | tech F1 | work-mode F1 | salary detect | salary cur/kind/amt | field F1 | $/1k | p50 s | p95 s |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | bielik-1.5b-gguf__few | 1.00 | 0.80 | 0.25 | 0.12 | 0.54 | 0.61 | 0.00/0.00/0.00 | 0.30 | – | 21.43 | 103.02 |
-| bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.04 | – | 67.9 | 102.6 |
-| claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.43 | 3.34 | 2.5 | 4.7 |
+| bielik-1.5b-gguf__zero | 1.00 | 0.05 | 0.07 | 0.01 | 0.05 | 0.03 | 0.03/0.00/0.00 | 0.04 | – | 67.90 | 102.58 |
+| claude-haiku-4-5__zero | 1.00 | 1.00 | 0.44 | 0.26 | 0.60 | 0.77 | 0.23/0.11/0.06 | 0.43 | 3.34 | 2.47 | 4.68 |
 | claude-haiku-4-5__few | 1.00 | 1.00 | 0.62 | 0.28 | 0.63 | 0.78 | 0.23/0.11/0.06 | **0.51** | 4.47 | 2.25 | 4.13 |
 | bielik-1.5b__zero (base, HF 4-bit) | – | – | – | – | – | – | – | – | – | – | – |
 | **bielik-1.5b-lora__zero (QLoRA, ours)** | – | – | – | – | – | – | – | – | – | – | – |
@@ -371,8 +377,8 @@ sampling noise. `--no-bootstrap` skips the section; the resampling dominates the
 ## Data & ethics
 
 Raw postings are **never committed**: prose is captured at collection time (theprotocol postings
-expire and the site strips pages for datacenter IPs), the processed dataset is frozen on HF Hub, and
-only prose-derived fields leave the machine. Personal data (the `applying` block) is dropped.
+expire and the site strips pages for datacenter IPs), the processed dataset stays local until its
+Hub repository is provisioned, and only prose-derived fields leave the machine. Personal data (the `applying` block) is dropped.
 Collection is a bounded, throttled sample — never the whole base. Attribution: theprotocol.it, reused
 via `it-job-radar`.
 

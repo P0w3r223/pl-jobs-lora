@@ -199,13 +199,31 @@ def test_every_figure_the_page_prints_is_one_a_committed_artifact_prints():
     carrier that can see it: the index checker reads the page and the stylesheet and has no
     access to `results/`.
     """
-    # **What this cannot catch, measured rather than assumed.** Two of the four artifacts are
+    # **What this cannot catch, asserted rather than stated.** Two of the four artifacts are
     # ADRs — prose, full of small integers — so the set this page is checked against is very
-    # wide: 262 figures admitted, 39 of them bare one- or two-digit integers. Swept by
-    # substituting one digit at a time, **56 of the 59 figures this page prints have at least
-    # one corruption this test accepts**, including `0.28` → `0.27`, which retypes the ceiling
-    # as the value actually reached. Reintroducing `23 %` in place of the cell's `0.23` passes
-    # outright, because `ADR-0001` writes `n=23` about a sample size.
+    # wide. Swept by substituting one digit at a time, **most of the figures this page prints
+    # have at least one corruption this test accepts**, including `0.28` → `0.27`, which
+    # retypes the ceiling as the value actually reached. Reintroducing `23 %` in place of the
+    # cell's `0.23` passes outright, because `ADR-0001` writes `n=23` about a sample size.
+    #
+    # The width is pinned below instead of written into this comment, and the reason is what
+    # happened to the sentence that used to stand here: it read *"262 figures admitted, 39 of
+    # them bare"* and *"56 of the 59 figures this page prints"*, both exactly right when they
+    # were typed and stale one commit later. `305f4e2` added `_canonical`, folding ten
+    # trailing-zero duplicates to 252; `36524c4` took the handle `P0w3r223` out of two ADRs on
+    # the artifact list and its `223` with it, leaving 251. Nothing was careless — the number
+    # was measured, correctly, and then the definition underneath it moved. `0010` §4 B-4e.
+    #
+    # **So a commit that changes what these figures mean cannot land green.** Update the pin in
+    # the same commit that moves the page or the artifact set; that is the point of it, not a
+    # chore beside it.
+    admitted_now = _figures(_artifact_text())
+    printed_now = _figures(_rendered_text())
+    bare_now = {one for one in admitted_now if one.isdigit() and len(one) <= 2}
+    assert (len(admitted_now), len(bare_now), len(printed_now)) == (251, 39, 58), (
+        f"the census moved to {len(admitted_now)} admitted, {len(bare_now)} of them bare, "
+        f"{len(printed_now)} printed — which is fine, and this pin moves with it in the same "
+        f"commit")
     #
     # So this test is a floor, not the guard: it catches a figure that appears *nowhere*, and
     # the tile test below is what binds a figure to the cell it claims to be. Versioning

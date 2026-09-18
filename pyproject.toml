@@ -14,7 +14,7 @@ keywords = ["qlora", "peft", "fine-tuning", "polish-nlp", "structured-extraction
 # LOCAL half of the dependency split (ADR-0004): everything needed to build the dataset,
 # score predictions, and run the base-model probe on CPU. The GPU/Linux training stack
 # (transformers/peft/bitsandbytes) lives in requirements-train.txt and is installed ONLY
-# on Colab — it must never be a local dependency.
+# on the hosted GPU — it must never be a local dependency.
 dependencies = [
     "pydantic>=2.7,<3",
     "pyyaml>=6,<7",
@@ -57,7 +57,7 @@ filterwarnings = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-# Colab notebooks use mid-cell imports, magics, and long one-liners by design — lint the package, not them.
+# Hosted-GPU notebooks use mid-cell imports, magics, and long one-liners by design — lint the package, not them.
 extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]

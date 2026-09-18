@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The best available model recovers 94% of what the input makes recoverable — pl-jobs-lora</title>
+<title>A frontier API reaches 94% of a model-free 0.28 ceiling — pl-jobs-lora</title>
 <meta name="description" content="A QLoRA fine-tune of a small Polish LLM that turns job-posting prose into structured JSON, compared against zero-shot and few-shot API baselines on accuracy, cost and latency — with a model-free measurement of what the input can support at all.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="The best available model recovers 94% of what the input makes recoverable">
+<meta property="og:title" content="A frontier API reaches 94% of a model-free 0.28 ceiling — pl-jobs-lora">
 <meta property="og:description" content="A field scoring 0.01 for every model, the frontier baseline included, is usually not measuring the model. Searching the postings with no model involved says the ceiling on recall is 0.28.">
 <meta property="og:url" content="https://p0w3r223.github.io/pl-jobs-lora/">
 <meta name="twitter:card" content="summary">
@@ -100,12 +100,12 @@
 </head>
 <body>
 <p class="eyebrow">LLM extraction · QLoRA · evaluation</p>
-<h1>The best available model recovers 94% of what the input makes recoverable</h1>
-<p class="sub">A field scored 0.01 for <em>every</em> model, the frontier baseline included — which is
-usually not a measurement of the model. Searching the postings directly, with nothing model-shaped
-involved, puts the ceiling on recall at 0.28, and the best variant reaches 0.27 of it. A QLoRA
-fine-tune of a small Polish LLM that turns job-posting prose into structured JSON, compared against
-zero-shot and few-shot API baselines on accuracy, cost and latency.</p>
+<h1>A frontier API reaches 94% of a model-free 0.28 ceiling</h1>
+<p class="sub">A QLoRA fine-tune of a small Polish LLM that turns job-posting prose into structured
+JSON, compared against zero-shot and few-shot API baselines on accuracy, cost and latency. One field
+scores 0.01 for <em>every</em> model, the frontier baseline included, which is usually not a
+measurement of the model: searching the postings directly, with nothing model-shaped involved, puts
+the ceiling on recall at 0.28, and the best variant reaches 0.27 of it.</p>
 
 <ul class="kpis">
   <li class="kpi"><b>0.28</b><span>ceiling on recall for <code>tech_expected</code>, model-free</span></li>
@@ -234,8 +234,9 @@ zero-shot and few-shot API baselines on accuracy, cost and latency.</p>
 
 <div class="card">
   <h2>Data and ethics</h2>
-  <p>Raw postings are never committed: prose is captured at collection time, the processed dataset is frozen
-  on the Hugging Face Hub, and only prose-derived fields leave the machine. Personal data is dropped, and
+  <p>Raw postings are never committed: prose is captured at collection time, the processed dataset stays
+  local until its Hugging Face Hub repository is provisioned, and only prose-derived fields leave the
+  machine. Personal data is dropped, and
   collection is a bounded, throttled sample rather than the whole base. Attribution: theprotocol.it, reused
   via it-job-radar.</p>
 </div>
