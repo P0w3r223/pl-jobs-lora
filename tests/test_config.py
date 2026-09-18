@@ -2,6 +2,7 @@
 
 import dataclasses
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,8 @@ from pl_jobs_lora.config import (
 )
 from pl_jobs_lora.tracking import resolve_tracking_uri
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_config_loads_candidates_and_probe():
     cfg = load_config()
@@ -26,6 +29,26 @@ def test_config_loads_candidates_and_probe():
     assert {"qwen2.5-1.5b", "bielik-1.5b"} <= keys
     assert cfg.probe.temperature == 0.0  # greedy — base model is the only variable
     assert cfg.probe.dev_slice_size > 0
+
+
+def test_a_negative_limit_is_refused_before_it_reaches_the_sampler(monkeypatch):
+    """`--limit` is the divisor's third path, and argparse types it as any `int`.
+
+    **The session is replaced by a refusal, so this asserts the order and not only the raise.**
+    Written without that, the test passed for the right reason and failed for a dangerous one:
+    the mutation that removes the guard sent it through `_session` into a live fetch of
+    `theprotocol.it`, and the battery ran for ten minutes before it was killed. A test one
+    mutation away from scraping a production site is not a test this repository can keep — and
+    the collector is the module whose own docstring says raw HTML never leaves the machine.
+    """
+    from pl_jobs_lora.dataset import collect
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("the collector opened a session before refusing the limit")
+
+    monkeypatch.setattr(collect, "_session", refuse)
+    with pytest.raises(ValueError, match="limit"):
+        collect.collect_dataset(load_config(), {}, limit=-1)
 
 
 def _valid_probe(**overrides) -> ProbeConfig:
@@ -75,11 +98,31 @@ def test_the_data_validator_holds_the_rest_of_its_block():
     _validate_data(_valid_data())
 
 
-def test_the_shipped_config_passes_both_new_validators():
-    """Load is the assertion: `load_config` calls them, so this fails if the file drifts."""
-    cfg = load_config()
-    assert cfg.probe.dev_slice_size > 0
-    assert cfg.data.sitemap_offers_sample > 0
+def test_load_config_runs_the_two_new_validators(tmp_path):
+    """The boundary is the claim, so the boundary is what this calls.
+
+    *The first edition of this test asserted `cfg.probe.dev_slice_size > 0` on the shipped
+    config and called itself "load is the assertion".* It was not: deleting **both** calls from
+    `load_config` left all 247 tests green, because those assertions are properties of
+    `configs/config.yaml` rather than of the load path. The validators were proven branch by
+    branch and the sentence that mattered — *validated at load* — had no carrier at all. Found
+    by the `code-reviewer` pass over the pull request that wrote it.
+    """
+    shipped = (ROOT / "configs" / "config.yaml").read_text(encoding="utf-8")
+
+    bad_probe = tmp_path / "probe.yaml"
+    bad_probe.write_text(shipped.replace("dev_slice_size: 25", "dev_slice_size: 0"),
+                         encoding="utf-8")
+    with pytest.raises(ValueError, match="dev_slice_size"):
+        load_config(bad_probe)
+
+    bad_data = tmp_path / "data.yaml"
+    bad_data.write_text(shipped.replace("sitemap_offers_sample: 800", "sitemap_offers_sample: 0"),
+                        encoding="utf-8")
+    with pytest.raises(ValueError, match="sitemap_offers_sample"):
+        load_config(bad_data)
+
+    load_config()  # the positive control: the shipped file still passes the path above
 
 
 def test_config_is_frozen():

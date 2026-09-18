@@ -25,6 +25,12 @@ first instrument this portfolio built for this shape, with two changes the port 
   record is supposed to still read as it was written; `ADR-0006`:104's `## Colab Step 0` is a
   manual wearing an ADR's number, and a reader follows it.
 
+The fifteen lines the row counted are not fifteen sites this guard rewrote: ten were in the
+manuals and the heading, and five sit in `ADR-0003` and `ADR-0006` bodies, which are dated
+record and stay as written. `docs/research/` is out for the same reason and carries the same
+`Date:`/`Status:` header — which is why `f6-data-availability.md` still says the dataset is
+frozen on HF Hub, a sentence B-4c corrected on the page, in the README and in `.gitignore`.
+
 The rule is not *never mention it*: the retired name may appear where its retirement appears
 with it, in the decision's own words.
 """
@@ -81,7 +87,19 @@ def _stated(path: Path, lines: list[str] | None = None) -> list[str]:
     lines = _text(path).split("\n") if lines is None else lines
     found = []
     for n in range(len(lines)):
-        if not any(one in _prose(lines[n:n + 2]) for one in MARKERS):
+        # **Detection is per line, and the report therefore names a line that holds the
+        # marker.** Folded with the next line, as the port inherited it, this reported the line
+        # *before* every match too — eight of nineteen entries held no marker at all, including
+        # `python-version: "3.12"` under a heading saying the platform is named there.
+        #
+        # The fold is not merely noisy here, it is dead: `_prose` joins with a space, so a
+        # one-word marker can never be split across a line break, and `it-job-radar`'s fold
+        # exists because its markers are phrases — `the browser`, `browser-side`. Dropped
+        # rather than kept as insurance, because a branch that cannot fire is a branch nobody
+        # can test. **The window stays**, and it is what the wrapped-sentence cases in this
+        # tree actually need: `requirements-train.txt` and `ci.yml` both put the retirement a
+        # line or two from the claim.
+        if not any(one in _prose([lines[n]]) for one in MARKERS):
             continue
         window = _prose(lines[max(0, n - NEARBY):n + NEARBY + 2])
         if CITES in window and any(one in window for one in RETIRED_BY):
@@ -106,6 +124,11 @@ def _manuals() -> list[Path]:
         ROOT / "configs" / "config.yaml",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / "notebooks" / "train_qlora.ipynb",
+        # The published page is the most present-tense surface here and was missing from this
+        # list, which made the docstring's *"`docs/decisions/` is excluded whole"* read as the
+        # only exclusion there was. It names no platform today; adding it now costs one line
+        # and stops the gap being discovered later.
+        ROOT / "docs" / "index.html",
     ]
     absent = [p.name for p in roots if not p.is_file()]
     assert absent == [], f"the sweep names files that are not there: {absent}"
