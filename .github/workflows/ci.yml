@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      # LOCAL deps only. The GPU/Linux training stack (requirements-train.txt) is a Colab
+      # LOCAL deps only. The GPU/Linux training stack (requirements-train.txt) is a hosted-GPU
       # concern and is never installed in CI — the tests run fully offline (no models, no network).
       - name: Install (local deps + dev)
         run: |

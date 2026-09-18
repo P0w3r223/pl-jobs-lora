@@ -101,7 +101,7 @@ overfit risk. All knobs go into a new `configs/config.yaml` `train:` block — n
   with only the adapter toggled; matched greedy decoding and token cap. The probe's Q8_0/CPU base
   numbers stay as context, but the headline adapter attribution uses the identical 4-bit GPU load.
 
-## Colab Step 0 (before writing final `max_seq_len`)
+## Hosted-GPU Step 0 (before writing final `max_seq_len`)
 
 Tokenize the 568 train records with the real Bielik tokenizer, set `train.max_seq_len` to cover
 ~p99 of prompt+completion, and verify the completion (gold JSON) is never truncated. The config
