@@ -1,29 +1,25 @@
 # pl-jobs-lora
 
-**A QLoRA fine-tune of a small Polish LLM that turns Polish IT job-posting prose into structured
-JSON — compared honestly against zero-shot / few-shot API baselines on accuracy × cost × latency.**
+**Polish IT job ads to structured JSON: API baselines, a data ceiling, and a QLoRA pipeline whose
+fine-tune has not been run yet.**
 
-Portfolio project (stage 2). Given the free-text of a Polish IT job posting, the model
-extracts a structured record — seniority, required/optional technologies, work mode, and salary —
-as validated JSON. The dataset is **built from the sibling project [`it-job-radar`](https://github.com/P0w3r223/it-job-radar)**,
-labeled with a triangulated QA loop, and every model variant is scored by one shared harness. The
-argument the project makes: *a 1.5B model I fine-tuned myself can rival a frontier API on this narrow
-task at a fraction of the cost — and here is the measurement.*
+Given the free text of a Polish IT job posting, a model extracts seniority, required and optional
+technologies, work mode and salary as validated JSON. The dataset is built from the sibling project
+[it-job-radar](https://github.com/P0w3r223/it-job-radar), and every variant is scored by one shared
+harness with bootstrap confidence intervals on a 142-posting test set.
 
-> Status: **in progress — baselines measured, fine-tune pending.** The extraction contract, vendored
-> normalization, config/tracking layer, and design decisions are built and tested; the base model is
-> **chosen from data** — **Bielik-1.5B, few-shot** (see below); the **prose→JSON dataset is collected,
-> leakage-guarded, and split by publication date**; the **labeling-QA triangulation**, the **S4
-> evaluation harness**, and the **S5 QLoRA trainer + inference** (hosted GPU, with all pure parts tested
-> locally) are built. **Run so far:** the labeling-QA proposer (708/710 postings relabeled from prose)
-> and its human-review queue draw; the untuned base's **local CPU (GGUF) predictions on the full
-> 142-item test set**; and the **`claude-haiku-4-5` API baseline** — both shot modes each, so **four of
-> the six rows below are real measurements**, reported with bootstrap confidence intervals. What
-> remains is compute outside this environment: the labeling-QA arbiter + human adjudication, and the
-> QLoRA fine-tune itself — see "Pending" under Evaluation and under Labeling QA below.
->
-> One published result was **retracted and corrected** along the way; the correction is written up
-> rather than quietly restated, under "Correction" below.
+The labels are hard to learn from the text alone. Salary appears in only 35 of the 142 test postings,
+the gold labels come from a platform field that has to be removed from the model's input, and one
+field (`tech_optional`) is not recoverable from the posting at all.
+
+| Few-shot, 142 test postings | Field F1 |
+|---|---|
+| `claude-haiku-4-5` (API) | 0.51 |
+| Bielik-1.5B, quantised, local CPU, not fine-tuned | 0.30 |
+
+> **Status: in progress.** The baselines are measured end to end. The QLoRA trainer and inference
+> code are built and their pure parts are tested; the fine-tune needs a hosted GPU and has not been
+> run. **[Live page](https://p0w3r223.github.io/pl-jobs-lora/)**
 
 ## Why it's built this way
 
@@ -67,178 +63,7 @@ pytest        # offline: no models, no network
 ruff check .
 ```
 
-### Base-model probe (ADR-0001)
-
-Selects the QLoRA base by running both candidates (Qwen2.5-1.5B, Bielik-1.5B) zero- and few-shot
-over a live dev slice on **local CPU via GGUF**, scored by the pure harness:
-
-```bash
-# CPU llama.cpp: on Windows use the prebuilt wheel (no compiler needed)
-.venv/Scripts/python -m pip install llama-cpp-python --prefer-binary \
-  --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-
-.venv/Scripts/python -m pl_jobs_lora.probe --collect   # fetch slice, then probe both models
-.venv/Scripts/python -m pl_jobs_lora.probe             # replay cached slice
-.venv/Scripts/python -m pl_jobs_lora.probe --rescore   # re-score stored predictions (no model)
-```
-
-GGUFs download on demand; the slice, models, and per-run predictions/reports stay local (gitignored).
-Both candidates use matched **Q8_0** quantization (Bielik ships no q4). Results land in
-`results/probe/`; the decision and numbers are recorded in ADR-0001.
-
-`--rescore` is the probe's counterpart to `eval.run --report`: it re-scores the **stored**
-predictions with the current scorer, offline and without loading a model, so a change to the
-metrics can be propagated to the published probe numbers without re-paying for inference. It was
-added when the scoring correction below invalidated the salary columns of the ADR-0001 table — see
-that ADR's 2026-08-21 amendment.
-
-### Dataset build (ADR-0002)
-
-Collects a bounded, throttled, spread sample of theprotocol offers, extracts **prose input** (titled
-`jsonSections` only — the technologies widget is dropped as a label leak) + **platform-gold labels** +
-publication date, filters the unusable, deduplicates reposts, and splits **by publication date**
-(newest 20% → test) — never randomly:
-
-```bash
-.venv/Scripts/python -m pl_jobs_lora.dataset.run --collect --limit 20   # smoke: fetch 20, build, split
-.venv/Scripts/python -m pl_jobs_lora.dataset.run --collect              # full ~800 collection + freeze
-.venv/Scripts/python -m pl_jobs_lora.dataset.run                        # replay cached slice, rebuild
-```
-
-The collected slice and processed `data/processed/{train,test}.jsonl` + `manifest.json` stay local
-(gitignored); freezing them on HF Hub (`--push`, needs `HF_TOKEN`) is deferred until the dataset repo
-is provisioned. Everything downstream replays this frozen dataset — collect once, never re-scrape
-(offers expire).
-
-The current build: **710 records**, split **568 train / 142 test** by publication date — the three
-figures `ADR-0002`, `configs/config.yaml` and `results/eval/report.json` carry. Label coverage for
-salary is **31%**, which `ADR-0006` records and which is honestly sparse: it is often absent from the
-posting.
-
-*The per-field coverage is printed by nothing committed and was removed rather than corrected;
-the fetch and dedupe counts are in `data/processed/manifest.json`, which the build writes and
-`.gitignore` keeps local. A hand-typed figure with no instrument beside it only sets the next
-staleness date, and the collection run itself now prints its drops — the other half of the same
-repair. `dataset_manifest()` writes `collected`, `passed_filters`, `dropped_filters`,
-`dropped_duplicates` and `records`; coverage is not among them, which the first edition of this
-paragraph said it was.* Zero prose leaks the technologies widget (leakage guard). Cross-split leakage is prevented
-by the **dedupe-before-split** ordering: train and test share **no offer id** and **no prose hash**.
-The temporal cut is by publication date (train older, test newest); in this build it falls cleanly
-between two postings ~14 min apart.
-
-### Labeling QA (ADR-0005)
-
-Before trusting the platform-gold labels, S3 triangulates three independent label sources and reports
-their agreement. A local **Bielik-1.5B few-shot** proposer relabels every posting **from prose only**
-(a small-model *prose-recoverability floor*, not a quality claim); its labels are compared to the
-platform gold at full scale. A seeded, **disagreement-stratified 72-record sample** is then drawn for
-human adjudication, and a distinct API arbiter (`claude-opus-4-8`) pre-fills each sample so the human
-corrects contested cells instead of labeling from a blank form:
-
-```bash
-.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --propose   # Bielik few-shot over the set
-.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --sample     # seeded, stratified queue
-.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --arbiter    # pre-fill via the API arbiter
-#     -> hand-adjudicate every contested cell, save as results/labeling_qa/human_gold.jsonl
-.venv/Scripts/python -m pl_jobs_lora.dataset.labeling_qa --report     # agreement + triangulation
-```
-
-The report gives raw agreement, per-field F1 (reused scorer), and **Cohen's κ** for the categorical
-fields, plus a per-field **triangulation** bucketing each cell into *all-agree / platform-gap-caught
-(LLM==human≠platform) / LLM-error (platform==human≠LLM) / all-differ*. The agreement math
-(`dataset/agreement.py`) and the sampler are **pure and offline**; only `dataset/labeling_qa.py`
-touches the model, the network, and files. Proposals, the review queue, and human gold echo prose and
-are **never committed** — only the numbers-only `results/labeling_qa/report.{json,md}` is versioned.
-Egress is a single point, hard-capped at ≤80 PII-free prose snippets to the arbiter; the Anthropic
-client is an optional `api` extra imported lazily, so the core install, tests, and CI stay offline
-(CI exercises the agreement layer on synthetic `data/fixtures/labeling_qa/` only).
-
-**Run status:** `--propose` and `--sample` have been run — 708/710 postings relabeled from prose, and
-the seeded 72-record review queue is drawn. **Pending:** `--arbiter` (paid API) and the human
-adjudication pass, then `--report`; all three are compute/manual steps outside this environment, not
-code.
-
-### Evaluation — API baselines + comparison report (ADR-0003)
-
-S4 completes the `eval/` module: the **zero-/few-shot API baselines** and the **comparison report**
-that scores every variant on accuracy × cost × latency. The baseline API model is a cheap frontier
-model (`claude-haiku-4-5`); it reuses the **same prompt as the probe** and generates **plain text**
-(not a forced tool call), so JSON validity stays a first-class metric the model can fail — the only
-variable across variants is the model.
-
-```bash
-.venv/Scripts/python -m pl_jobs_lora.eval.run --baselines   # zero-/few-shot over test set (paid, network)
-.venv/Scripts/python -m pl_jobs_lora.eval.run --report      # score every predictions file (offline)
-.venv/Scripts/python -m pl_jobs_lora.eval.run --report --no-bootstrap   # skip the resampling section
-```
-
-`--baselines` runs the frozen test set through the API and writes
-`results/eval/predictions/{model}__{mode}.jsonl` (per-call token counts + latency); it needs
-`ANTHROPIC_API_KEY` and the optional `api` extra. `--report` is **pure and offline**: it scores each
-predictions file with the ADR-0003 scorer, folds in API cost (tokens × list price, pulled from
-`config.yaml`) and p50/p95 latency, and writes the numbers-only `results/eval/report.{json,md}`.
-Variants without token counts — the local base/LoRA/GGUF runs (~$0 marginal) — report no cost, so the
-same report merges the API baselines with predictions dropped in later from the hosted GPU. Predictions echo
-prose and are **never committed**; only the report is versioned. Egress is hard-capped at
-`eval.request_max_snippets` per run, and the Anthropic client is imported lazily (`api` extra), so the
-core install, tests, and CI stay fully offline. The report answers the headline question: *does a 1.5B
-local LoRA rival a frontier API on this task at a fraction of the cost/latency?*
-
-Beyond the accuracy table, `--report` emits two sections that keep that answer interpretable: a
-**failure taxonomy** (why each invalid prediction was invalid, with truncation separated from
-malformed JSON) and **bootstrap intervals** with paired variant differences, so a gap on 142 records
-is only called real when it survives resampling. Both are pure and offline; both are described under
-Evaluation below and in [ADR-0003](docs/decisions/0003-evaluation-methodology.md).
-
-### Training — QLoRA fine-tune on a hosted GPU (ADR-0006)
-
-S5 fine-tunes Bielik-1.5B with QLoRA and produces the base/adapter predictions that complete the
-table. The method: **zero-shot completion SFT** — each record is *exactly* the zero-shot eval prompt
-with the gold JSON as the target, prompt tokens masked so the model trains only on the JSON (learning
-the stop token that the base model, which rambles, lacks). LoRA over **all linear layers**
-(r=16/α=32, NF4 4-bit); an **inner temporal dev split** (newest ~10% of train) governs checkpoint
-selection so the **142-record test set is scored exactly once** — the fairness guard, since the API
-baselines get no tuning. Salary is honestly a data-availability ceiling (the leakage guard keeps it
-out of the prose the model sees), so `tech_expected` F1 is the metric to watch.
-
-Training needs a **Linux GPU** (bitsandbytes has no Windows/CPU build, and the local card is a 4 GB
-Pascal), so it runs on a free **Kaggle** T4 via
-[`notebooks/train_qlora.ipynb`](notebooks/train_qlora.ipynb); the GPU stack lives in
-`requirements-train.txt` and is installed **only there** (ADR-0004 and its 2026-08-21 amendment,
-which records why Colab was abandoned). The whole repo is driven from the notebook — it only invokes
-these scripts:
-
-```bash
-# on the hosted GPU, after `pip install -r requirements-train.txt`:
-python -m pl_jobs_lora.train.qlora --push                 # fine-tune; push the adapter to HF
-python -m pl_jobs_lora.inference.predict_hf --base --lora  # base (adapter off) + LoRA predictions
-python -m pl_jobs_lora.eval.run --report                   # merge every variant into the table
-```
-
-`predict_hf` reuses the shared prompt + parser + greedy decoding (token cap = `eval.max_tokens`), and
-loads the base and the adapter from the *same* 4-bit weights with only the adapter toggled — so the
-adapter-vs-base comparison isolates one variable. Its predictions carry no token counts, so the report
-prices them at ~$0 (local). The pure parts — SFT formatting, the temporal dev split, completion
-masking — are tested on the local CPU `.venv`; the GPU orchestration is exercised only on the hosted GPU.
-`inference/predict_gguf.py` optionally times the base on **local CPU via GGUF** for the latency column
-(the adapter is not GGUF-converted). See [ADR-0006](docs/decisions/0006-qlora-training-method.md).
-
-```bash
-.venv/Scripts/python -m pl_jobs_lora.inference.predict_gguf --mode both   # ~5 h CPU, resumable
-.venv/Scripts/python -m pl_jobs_lora.inference.predict_gguf --mode zero --fresh
-```
-
-**The CPU runs are resumable**, because a full pass is roughly an hour few-shot and closer to four
-zero-shot. Each prediction is appended and flushed as it is produced, so Ctrl-C costs at most the
-records the OS had not yet written, and re-running the same command skips whatever is already on
-disk (progress prints against the *whole* set, not the remaining slice). A process killed mid-write
-leaves a torn final line; it is dropped and that one record recomputed. The mechanics live in
-`resume.py` and are shared with the labeling-QA proposer, which needs the same guarantee.
-
-One deliberate asymmetry: a row written **before the failure taxonomy existed** does not count as
-done, so re-running is what backfills `failure`/`raw` onto variants measured earlier. Because that
-discards the old rows, the previous file is copied to `*.jsonl.pre-taxonomy` first — regenerable,
-but regenerating costs the hours this path exists to protect.
+Each stage (base-model probe, dataset build, labeling QA, evaluation, training) with its commands: [docs/pipeline.md](docs/pipeline.md).
 
 ## Evaluation (partial — local + API rows in, GPU rows pending)
 
@@ -262,36 +87,7 @@ part-way now scores only its own subset and says so, instead of rendering as a c
 Metrics normalize both sides through the vendored it-job-radar functions (alias- and
 Polish-quirk-aware), so the comparison is fair rather than penalizing paraphrases.
 
-### Correction: the salary numbers published before 2026-08-18 were wrong
-
-The earlier scorer credited `None == None`, and **107 of 142 gold records carry no salary**. A model
-emitting nothing at all therefore inherited that base rate: the previous table reported
-`bielik-1.5b-gguf__zero` at ~~**0.75/0.87/0.74 on salary while producing valid JSON 4.9 % of the
-time**~~. That number measured the prevalence of missing salaries, not accuracy.
-
-The metric is now split, and both halves are denominated honestly:
-
-- **`salary detect`** — the present/absent decision, over all 142 records. Correctly answering
-  "no salary" is a real answer and is credited here.
-- **`salary cur/kind/amt`** — accuracy over the **35** records whose gold *has* a salary. Predicting
-  nothing earns nothing.
-
-The corrected picture is much worse and much more informative: even the frontier baseline recovers
-the currency on 0.23 of the salaries present, the arrangement on 0.11, and the amount bounds on
-**6 %**. Salary extraction is the weakest part of this task by a wide margin, which the old metric
-hid entirely. The same fix applies to set-valued fields — empty-vs-empty no longer counts as an
-exact match, and a field with no support renders `-` rather than a perfect score. Regression tests
-covering both cases are in `tests/test_scoring.py`.
-
-The same defect reached the **base-model probe** (ADR-0001), where it is starker still: that table
-published `bielik-1.5b / zero` at `0.74/0.96/0.74` on salary *while it emitted valid JSON on 0 % of
-the slice*. `results/probe/report.{json,md}` and the ADR table were regenerated from the cached
-slice via the new `probe --rescore` — the winner and the combined criterion are unchanged, one
-clause of the rationale was wrong and is struck. Details in
-[ADR-0001](docs/decisions/0001-base-model-selection.md#amendment-2026-08-21--the-salary-columns-were-measuring-label-sparsity).
-
-Zero-shot base confirms the ADR-0001 probe finding at full scale (0.05 valid vs 0.80 few-shot).
-Per-field accuracy stays weak (0.30 field F1 few-shot), which is the gap QLoRA (S5) targets.
+A salary-scoring bug inflated results published before 2026-08-18; what broke and how it was fixed: [docs/correction-2026-08-18.md](docs/correction-2026-08-18.md).
 
 ### Why a variant failed, not just how often
 
